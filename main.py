@@ -95,6 +95,21 @@ async def visit_job(job_url: str):
             skills.append(skill.strip() + "\n")
         job_details["skills"] = ", ".join(skills)
         
+        print(f"Checking for questions section...")
+        print(await page.check_for_element('section[data-test="Questions"]'))
+        
+        if await page.check_for_element('section[data-test="Questions"]'):
+            question_number = 1
+            questions = []
+            question_elements = await page.get_all_elements('section[data-test="Questions"] ol li')
+            for q_element in question_elements:
+                question_text = await page.get_text_content(q_element)
+                questions.append(str(question_number) + ". " + question_text.strip() + "\n")
+            job_details["questions"] = " ".join(questions)
+        else:
+            job_details["questions"] = "N/A"
+        
+        print(job_details)
         return job_details
     except Exception as e:
         print(e)
