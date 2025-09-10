@@ -54,42 +54,45 @@ async def visit_job(job_url: str):
     try:
         job_details = {}
         page = state["page"] 
-        await page.goto(job_url,captcha_selector="#LsMgo8",wait_until= "domcontentloaded",referer="https://www.upwork.com")
+        await page.goto(job_url,captcha_selector="#wNUym6",wait_until= "domcontentloaded",referer="https://www.upwork.com")
         await asyncio.sleep(2)  # Wait for a few seconds to ensure the page loads
         
         client_location = await page.get_text_content('li[data-qa="client-location"] strong')
-        job_details["client_location"] = client_location
+        job_details["client_location"] = client_location.strip() if client_location else "N/A"
         
         hire_rate = await page.get_text_content('li[data-qa="client-job-posting-stats"] div')
-        job_details["hire_rate"] = hire_rate
+        job_details["hire_rate"] = hire_rate.strip() if hire_rate else "N/A"
         
         total_spent = await page.get_text_content('li strong[data-qa="client-spend"] span')
-        job_details["total_spent"] = total_spent
+        job_details["total_spent"] = total_spent.strip() if hire_rate else "N/A"
         
         member_since = await page.get_text_content('li[data-qa="client-contract-date"] small')
-        job_details["member_since"] = member_since
+        job_details["member_since"] = member_since.strip() if hire_rate else "N/A"
         
-        summary_element = await page.get_all_elements('div[data-test="Description"] *')
+        summary_element = await page.get_all_elements('div[data-test="Description"] p')
         summary = ""
         for element in summary_element:
-            summary += await page.get_text_content(element)
+            summary_chunk = await page.get_text_content(element)
+            summary += summary_chunk.strip() + " "
         job_details["summary"] = summary.strip()
         
         duration_elements = await page.get_all_elements('div[data-cy*="duration"] + strong span')
         duration = await page.get_text_content(duration_elements[0]) if duration_elements else "N/A"
-        job_details["duration"] = duration
+        job_details["duration"] = duration.strip()
         
         rate_divs = await page.get_all_elements('div[data-cy="clock-timelog"] + div strong')
         rates = []
         for div in rate_divs:
-            rates.append(await page.get_text_content(div))
+            rate = await page.get_text_content(div)
+            rates.append(rate.strip())
         hourly_rate = "-".join(rates)
-        job_details["hourly_rate"] = hourly_rate
+        job_details["hourly_rate"] = hourly_rate.strip() if hourly_rate else "N/A"
         
         skill_elements = await page.get_all_elements('div.skills-list span span a div div')
         skills = []
         for element in skill_elements:
-            skills.append(await page.get_text_content(element))
+            skill = await page.get_text_content(element)
+            skills.append(skill.strip() + "\n")
         job_details["skills"] = ", ".join(skills)
         
         return job_details
