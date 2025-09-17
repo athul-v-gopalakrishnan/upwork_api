@@ -1,4 +1,6 @@
 __pycache__/
 .vscode/
 .env
-secrets/
+vault/
+data/
+*.ipynb

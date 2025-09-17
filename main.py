@@ -5,6 +5,8 @@ import asyncio
 
 from nyx.browser import NyxBrowser
 
+from upwork_agent.bidder_agent import build_bidder_agent,generate_proposal
+
 state = {}
 
 async def start_browser():
@@ -25,6 +27,8 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown code
     await browser.shutdown()
+    
+state["bidder_agent"] = build_bidder_agent()
     
 app = FastAPI(
     title="Upwork API",
@@ -136,6 +140,12 @@ async def login_to_upwork(username: str, password: str,security_question_answer:
         print(f"Error during login: {e}")
         return {"status": "Login attempt failed", "error": str(e)}
     return {"status": "Login attempt finished"}
+
+@app.post("/generate_proposal")
+async def generate_proposal_api(job_details: str):
+    proposal = generate_proposal(state["bidder_agent"], job_details)
+    return {"proposal": proposal}
+    
 
 if __name__ == "__main__":
     asyncio.run(login_to_upwork("vggvn8n@gmail.com", "upwork@automation"))
