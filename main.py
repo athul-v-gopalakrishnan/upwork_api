@@ -2,10 +2,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import asyncio
+import json
 
 from nyx.browser import NyxBrowser
 
-from upwork_agent.bidder_agent import build_bidder_agent,generate_proposal
+from upwork_agent.bidder_agent import build_bidder_agent,call_proposal_generator_agent
 
 state = {}
 
@@ -29,6 +30,7 @@ async def lifespan(app: FastAPI):
     await browser.shutdown()
     
 state["bidder_agent"] = build_bidder_agent()
+state["last_url"] = ""
     
 app = FastAPI(
     title="Upwork API",
@@ -56,6 +58,9 @@ app.add_middleware(
 @app.get("/visit_job")
 async def visit_job(job_url: str):
     try:
+        if state["last_url"] == job_url:
+            return {"status": "No new jobs to visit."}
+        state["last_url"] = job_url
         job_details = {}
         page = state["page"] 
         await page.goto(job_url,captcha_selector="#wNUym6",wait_until= "domcontentloaded",referer="https://www.upwork.com")
@@ -84,13 +89,20 @@ async def visit_job(job_url: str):
         duration = await page.get_text_content(duration_elements[0]) if duration_elements else "N/A"
         job_details["duration"] = duration.strip()
         
-        rate_divs = await page.get_all_elements('div[data-cy="clock-timelog"] + div strong')
-        rates = []
-        for div in rate_divs:
-            rate = await page.get_text_content(div)
-            rates.append(rate.strip())
-        hourly_rate = "-".join(rates)
-        job_details["hourly_rate"] = hourly_rate.strip() if hourly_rate else "N/A"
+        price_div = await page.get_element('div[data-cy="fixed_price"] + div strong')
+        if price_div:
+            price = await page.get_text_content(price_div).strip()
+            job_details["hourly_rate"] = price.strip() if price else "N/A"
+            job_details["job_type"] = "Fixed Price"
+        else:        
+            rate_divs = await page.get_all_elements('div[data-cy="clock-timelog"] + div strong')
+            rates = []
+            for div in rate_divs:
+                rate = await page.get_text_content(div)
+                rates.append(rate.strip())
+            hourly_rate = "-".join(rates)
+            job_details["hourly_rate"] = hourly_rate.strip() if hourly_rate else "N/A"
+            job_details["job_type"] = "Hourly"
         
         skill_elements = await page.get_all_elements('div.skills-list span span a div div')
         skills = []
@@ -113,6 +125,7 @@ async def visit_job(job_url: str):
         else:
             job_details["questions"] = "N/A"
         
+        job_details["status"] = "Done"
         print(job_details)
         return job_details
     except Exception as e:
@@ -123,7 +136,7 @@ async def visit_job(job_url: str):
 async def login_to_upwork(username: str, password: str,security_question_answer: str = None, remember_me: bool = True):
     try:
         page = state["page"]
-        await page.goto("https://www.upwork.com/ab/account-security/login",captcha_selector="#LsMgo8",wait_until= "domcontentloaded",referer="https://www.upwork.com") 
+        await page.goto("https://www.upwork.com/ab/account-security/login",captcha_selector="#wNUym6",wait_until= "domcontentloaded",referer="https://www.upwork.com") 
         login_page = await page.check_for_element("#login_username")
         await asyncio.sleep(2)
         if login_page:
@@ -142,9 +155,16 @@ async def login_to_upwork(username: str, password: str,security_question_answer:
     return {"status": "Login attempt finished"}
 
 @app.post("/generate_proposal")
-async def generate_proposal_api(job_details: str):
-    proposal = generate_proposal(state["bidder_agent"], job_details)
-    return {"proposal": proposal}
+async def generate_proposal_api(job_description: str, tech:str = None, questions: str = None):
+    job_details = {
+        "summary": job_description,
+        "technologies": tech if tech else "N/A",
+        "questions": questions if questions else "N/A"
+    }
+    job_details = json.dumps(job_details)
+    print(f"Job Details: {job_details}")
+    proposal = call_proposal_generator_agent(state["bidder_agent"], job_details)
+    return proposal
     
 
 if __name__ == "__main__":

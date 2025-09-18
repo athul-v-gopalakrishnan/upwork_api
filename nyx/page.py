@@ -44,6 +44,7 @@ class NyxPage:
     async def fill_field_and_enter(self, selector:Union[str, ElementHandle], text:str):
         """Fill a field and press Enter with the visual cursor"""
         try:
+            await self._page.locator(selector).scroll_into_view_if_needed()
             await self.nyx_cursor.cursor.click(selector=selector)
             await self._page.keyboard.press("Control+A")
             await self._page.keyboard.press("Backspace")
@@ -65,6 +66,7 @@ class NyxPage:
     async def get_text_content(self, selector:Union[str, ElementHandle]) -> Optional[str]:
         """Get text content of an element"""
         try:
+            await self._page.locator(selector).scroll_into_view_if_needed()
             element = await self._page.query_selector(selector) if isinstance(selector, str) else selector
             if element:
                 return await element.text_content()
@@ -78,6 +80,7 @@ class NyxPage:
     async def get_attribute(self, selector:Union[str, ElementHandle], attribute_name:str) -> Optional[str]:
         """Get attribute value of an element"""
         try:
+            await self._page.locator(selector).scroll_into_view_if_needed()
             element = await self._page.query_selector(selector) if isinstance(selector, str) else selector
             if element:
                 return await element.get_attribute(attribute_name)
@@ -90,6 +93,7 @@ class NyxPage:
         
     async def get_element(self, selector:Union[str, ElementHandle]):
         try:
+            await self._page.locator(selector).scroll_into_view_if_needed()
             element = await self._page.query_selector(selector) if isinstance(selector, str) else selector
             return element
         except Exception as e:
@@ -109,15 +113,19 @@ class NyxPage:
         try:
             await asyncio.sleep(7)
             # Wait for Cloudflare challenge to appear
-            challenge_div = await self._page.query_selector(selector=selector)
+            challenge_div = await self._page.query_selector(selector="div[class*='challenge-container']")
             print("\n\n",challenge_div,"\n\n")
             
             if challenge_div:
                 print("Cloudflare challenge detected, waiting to be solved...")
-                await self.nyx_cursor.captcha_click(challenge_div)
-                
-                await self._page.wait_for_selector(selector, state='detached', timeout=60000)
-                print("Cloudflare challenge solved.")
+                checkbox = await self._page.query_selector(selector=selector)
+                if checkbox:
+                    await self.nyx_cursor.captcha_click(checkbox)
+                    
+                    await self._page.wait_for_selector(selector, state='detached', timeout=60000)
+                    print("Cloudflare challenge solved.")
+                else:
+                    print("Captcha found but check the selector provided.")
             else:
                 print("No Cloudflare challenge detected.")
         except Exception as e:

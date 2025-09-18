@@ -1,6 +1,7 @@
 from dotenv import load_dotenv
 from typing import Sequence
-from typing_extensions import Annotated, TypedDict
+from typing_extensions import Annotated, TypedDict, List, Optional
+from pydantic import BaseModel,Field
 
 from langchain.chat_models import init_chat_model
 from langchain_openai import OpenAIEmbeddings
@@ -14,131 +15,202 @@ from vault.db_config import DB_CONNECTION_STRING
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
 from langgraph.checkpoint.memory import MemorySaver
-from langchain_core.messages import SystemMessage,BaseMessage
+from langchain_core.messages import SystemMessage,BaseMessage, AIMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.prompts import ChatPromptTemplate
 
 load_dotenv()
-
+  
+class Milestone(BaseModel):
+    title: str = Field(..., description="Title of the milestone")
+    amount: float = Field(..., description="Amount for the milestone")
+    due_date: str = Field(..., description="Due date for the milestone in YYYY-MM-DD format")
+    
+class QuestionAnswer(BaseModel):
+    question: str = Field(..., description="The question asked by the client in the job posting")
+    answer: str = Field(..., description="Your answer to the question")
+    
+class Proposal(BaseModel):
+    cover_letter: str = Field(..., description="A well formatted cover letter for the job proposal.")
+    questions_and_answers: List[QuestionAnswer] = Field(default_factory=list , description="List of questions and your answers")
+    
 class State(TypedDict):
     messages:Annotated[Sequence[BaseMessage],add_messages]
-    # doc:str
-    temperature:float
+    rag_query:Optional[str]
+    proposal:Optional[Proposal]
+    project_details:Optional[str]
+    retrieved_projects:Optional[str]
 
-llm = init_chat_model("openai:gpt-5-mini")
+llm = init_chat_model("openai:gpt-5")
+retriever_llm = init_chat_model("openai:gpt-5-nano")
 embedding_model = OpenAIEmbeddings(model="text-embedding-3-large")
 memory = MemorySaver()
-prompt_template = ChatPromptTemplate.from_template("""
-        TThe client has posted the following project description:
 
-        {project_description}
+RETRIEVAL_SYSTEM_PROMPT = """
+            You are a specialized query generator for an Upwork proposal system.
 
-        Your tasks:
-        1. Analyze the description and identify the core problem in broad, general terms.  
-        2. Use the `retrieve` tool with that conceptual problem to find relevant past projects.  
-        3. Write a proposal with the following structure:
-        - **Introduction:** Show you understand the client's needs.  
-        - **Relevant Experience:** Summarize related past projects (from the retrieved context) and show how they connect conceptually.  
-        - **Proposed Approach:** Briefly describe your plan to solve the client's problem.  
-        - **Value Proposition:** Explain why our agency is uniquely suited.  
-        - **Call to Action:** Invite the client to discuss further.  
+            Your ONLY task: 
+            - Convert the client's project description into a broad, semantically meaningful query.
+            - Pass this query into the "retrieval" tool to search past projects.
+            - Return only the query text (no explanations, no formatting).
 
-        Constraints:
-        - Be concise (250-350 words).  
-        - Use natural, professional language.  
-        - Do not copy project descriptions verbatim; reinterpret them in the client's context.  
- 
+            ## Rules (in order of importance):
+            1. Output must be a single short query string.
+            2. Focus on the main technical or conceptual problem.
+            3. Generalize appropriately (e.g., "recommendation systems" instead of "clothing app recommender").
+            4. Avoid copying the client's words exactly unless they already describe the general concept.
+            5. If multiple themes exist, choose the dominant technical one.
+
+            ## Examples:
+            Client: "I need a recommendation engine for a clothing app."
+            Query: recommendation systems
+
+            Client: "Automating invoices in Excel with some Python scripting."
+            Query: workflow automation and financial data processing
+
+            Client: "Looking for someone to build a chatbot for healthcare queries."
+            Query: conversational AI for healthcare
+
+            Client: "We want to analyze customer reviews to find pain points in our product."
+            Query: sentiment analysis and customer feedback mining
+
+            Client: "Build an ETL pipeline to move data from MongoDB to BigQuery."
+            Query: ETL pipelines and database integration
 """
-)
 
-SYSTEM_PROMPT = """You are an expert proposal writer for an Upwork agency.
-                    Your goal is to generate customized, professional proposals for new client projects.
-                    You have access to a tool called **retrieve** that lets you search a vector database of past agency projects.
-                    Use this tool whenever you need to find relevant prior work that demonstrates expertise aligned with the client's project.
-                    Always query the tool with a broad conceptual problem statement, not just keywords, so that you retrieve projects that are semantically and technically relevant.
-                    For example:
 
-                    If the client asks for “a recommendation engine for a clothing app,” query the tool with “personalized recommendation systems for consumer apps.”
 
-                    If the client asks for “automating invoices in Excel,” query with “workflow automation and financial data processing.”
-                    
-                    **Important:** If you cannnot find relevant past projects in one tool call, try rephrasing your query and calling the tool again.
-                    **Do not make up past projects; only use what you retrieve from the tool.**"""
+PROPOSAL_SYSTEM_PROMPT = """
+            You are an expert proposal writer for an Upwork agency.
 
-@tool(response_format="content", description="Retrieve of data past projects using the project description from vector store")
+            Your task is to generate customized, professional proposals for new client projects.  
+            You will be given:
+            1. The project details will be given as a well structured and detailed json.
+            2. A list of relevant past projects retrieved from a vector database (with metadata such as industry, technology, and domain).
+
+            ## Rules (in order of importance):
+
+            1. **Schema Compliance**
+            - The output MUST strictly follow the "Proposal" schema.
+            - "cover_letter" must be a professional, well-structured cover letter. 
+            - "questions_and_answers" should only be included if the project details json has the some questions in the questions field. While generating the answers, use the model "QuestionAnswer" \
+                in the "questions_and_answers" field of the "Proposal" schema. The question should exactly match the question given in the json.
+
+            2. **Use of Past Projects**
+            - Use the retrieved past projects and metadata as references to demonstrate expertise.
+            - Choose examples based on industry, domain, or technology alignment.
+            - If no useful projects are retrieved, simply write the proposal without referencing them.
+            - Never fabricate past projects.
+
+            3. **Client Questions**
+            - If the client asks questions in the project description field in the json given, include the answer in the cover letter.
+            - The answers to the questions in the questions field should be in the "questions_and_answers" field of the "Proposal" schema.
+            - If no questions are asked, leave "questions_and_answers" field empty.
+
+            4. **Cover Letter Quality**
+            - Be persuasive, client-focused, and confident.
+            - Highlight relevant experience and strengths.
+            - Show how the agency will solve the client's problem.
+            - Keep formatting clean and easy to read.
+            - Use the "Cover Letter" fields based on industry, domain, or technology given in the metadata of the extracted projects to create a new cover letter of the project. 
+            - Follow the schema and the approach in the given example.
+
+            ## Example Behaviors:
+            - Client asks: "Have you built dashboards before?" → Answer in "questions_and_answers".
+            - Retrieved project about "workflow automation in finance" → Reference it for "invoice automation".
+            - No relevant projects retrieved → Write a professional proposal without references.
+
+            ## Output Format:
+            Strictly produce output in the "Proposal" schema.
+"""
+
 def retrieve(
-    query:str,
+    state:State,
     ):
+    rag_query = state.get("rag_query", "")
     retriever = PGVector(
             embeddings=embedding_model,
             collection_name="proposal_embeddings",
             connection=DB_CONNECTION_STRING
         )
-    retrieved_docs = retriever.similarity_search(query = query, k = 5)
+    retrieved_docs = retriever.similarity_search(query = rag_query, k = 5)
     serialised = "\n\n".join(
         (f"Source : {doc.metadata}\nProject Description:{doc.page_content}")
         for doc in retrieved_docs
     )
-    return serialised
+    return {
+        "retrieved_projects": serialised,
+        "messages":state["messages"] + [AIMessage(content=serialised)],
+    }
 
-retrieve_tool = ToolNode(tools=[retrieve], name="retrieve_node")
-bidder_llm = llm.bind_tools(tools = [retrieve], tool_choice="auto")
+bidder_llm = llm.with_structured_output(Proposal)
 
 def check_for_tool_calls(state:State):
     last_message = state["messages"][-1]
     print(hasattr(last_message, "tool_calls") and bool(last_message.tool_calls))
     return (hasattr(last_message, "tool_calls") and bool(last_message.tool_calls))
 
-def query_or_respond(state:State):
-    prompt = prompt_template.invoke({
-        "project_description":state["messages"]
-    })
+def generate_search_query(state:State):
+    project_details = state.get("project_details", "")
+    
+    prompt = [
+        SystemMessage(content=RETRIEVAL_SYSTEM_PROMPT),
+        HumanMessage(content=f"The project details are given below:\n{project_details}")
+    ]
+    response = retriever_llm.invoke(prompt)
+    return {
+        "rag_query":response.content,
+        "messages":state["messages"] + [AIMessage(content=response.content)]
+        }
+    
+def generate_propsal(state:State):
+    project_details = state.get("project_details", "")
+    retrieved_projects = state.get("retrieved_projects", "")
+    prompt = [
+        SystemMessage(content=PROPOSAL_SYSTEM_PROMPT),
+        HumanMessage(content=f"The project details are given below:\n{project_details}\n\nThe past relevant projects are given below:\n{retrieved_projects}")
+    ]
     response = bidder_llm.invoke(prompt)
-    return {"messages":[response]}
+    return {
+        "proposal":response,
+        "messages":state["messages"] + [AIMessage(content=response.model_dump_json(indent=2))]
+        }
 
 def build_bidder_agent():
     graph_builder = StateGraph(State)
-    graph_builder.add_node(query_or_respond)
-    graph_builder.add_node(retrieve_tool)
-    graph_builder.set_entry_point("query_or_respond")
-    graph_builder.add_conditional_edges(
-        "query_or_respond",
-        check_for_tool_calls,
-        {False:END, True:"retrieve_node"}
-    )
-    graph_builder.add_edge("retrieve_node", "query_or_respond")
+    graph_builder.add_node(generate_search_query)
+    graph_builder.add_node(retrieve)
+    graph_builder.add_node(generate_propsal)
+    graph_builder.set_entry_point("generate_search_query")
+    graph_builder.add_edge("generate_search_query", "retrieve")
+    graph_builder.add_edge("retrieve", "generate_propsal")
+    graph_builder.set_finish_point("generate_propsal")
     graph = graph_builder.compile(checkpointer=memory, )
     return graph
 
-def generate_proposal(agent:StateGraph, project_description:str):
+def call_proposal_generator_agent(agent:StateGraph, project_description:str):
     initial_state:State = {
-        "messages":[SystemMessage(content=SYSTEM_PROMPT)],
-        "temperature":0.2
+        "messages":[HumanMessage(content=f"The project details are given below:\n{project_description}")],
+        "project_details":project_description,
     }
-    initial_state["messages"].append(
-        SystemMessage(content=f"Write a proposal for the following project description:\n{project_description}")
-    )
     final_state = agent.invoke(initial_state, config={
-                    "recursion_limit": 3,
                     "configurable": {
                         "thread_id": "user123",
                     }})
-    return final_state["messages"][-1].content
+    generated_proposal =  final_state["proposal"]
+    
+    response = {
+        "cover_letter": generated_proposal.cover_letter,
+        "questions_and_answers": [{"question": qa.question, "answer": qa.answer} for qa in generated_proposal.questions_and_answers]
+    }
+    
+    return response
+    
     
 
 if __name__ == "__main__":
     agent = build_bidder_agent()
-    initial_state:State = {
-        "messages":[SystemMessage(content=SYSTEM_PROMPT)],
-        "temperature":0.2
-    }
-    query = """We need a web application that allows users to create and share photo albums with friends. 
-    The app should support user authentication, photo uploads, album creation, and social sharing features."""
-    initial_state["messages"].append(
-        SystemMessage(content=f"Write a proposal for the following project description:\n{query}")
-    )
-    final_state = agent.invoke(initial_state, config={
-                "configurable": {
-                    "thread_id": "user123",
-                }})
-    print(final_state["messages"][-1].content)
+    generated_proposal = call_proposal_generator_agent(agent, "I need a recommendation engine for a clothing app. Have you built recommendation systems before?")
+    print(generated_proposal["cover_letter"])
+    for questions_and_answers in generated_proposal["questions_and_answers"]:
+        print(f"Q: {questions_and_answers["question"]}\nA: {questions_and_answers["answer"]}\n")
