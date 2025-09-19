@@ -7,13 +7,16 @@ import json
 from nyx.browser import NyxBrowser
 
 from upwork_agent.bidder_agent import build_bidder_agent,call_proposal_generator_agent
+from vault.db_config import DB_CONNECTION_STRING
+
+from langgraph.checkpoint.postgres import PostgresSaver
 
 state = {}
 
-async def start_browser():
-    browser = NyxBrowser()
-    await browser.start()
-    state['browser'] = browser
+# async def start_browser():
+#     browser = NyxBrowser()
+#     await browser.start()
+#     state['browser'] = browser
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -28,8 +31,9 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown code
     await browser.shutdown()
-    
+
 state["bidder_agent"] = build_bidder_agent()
+print("Bidder agent created")
 state["last_url"] = ""
     
 app = FastAPI(
@@ -165,6 +169,9 @@ async def generate_proposal_api(job_description: str, tech:str = None, questions
     print(f"Job Details: {job_details}")
     proposal = call_proposal_generator_agent(state["bidder_agent"], job_details)
     return proposal
+
+# @app.post("/apply_for_job")
+# async def apply_for_job()
     
 
 if __name__ == "__main__":

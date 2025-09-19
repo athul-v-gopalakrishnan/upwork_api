@@ -14,7 +14,9 @@ from vault.db_config import DB_CONNECTION_STRING
 
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
+from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langchain_core.messages import SystemMessage,BaseMessage, AIMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.prompts import ChatPromptTemplate
@@ -40,8 +42,10 @@ class State(TypedDict):
     proposal:Optional[Proposal]
     project_details:Optional[str]
     retrieved_projects:Optional[str]
+    
+llm_name = "openai:gpt-5-nano"
 
-llm = init_chat_model("openai:gpt-5")
+llm = init_chat_model(llm_name)
 retriever_llm = init_chat_model("openai:gpt-5-nano")
 embedding_model = OpenAIEmbeddings(model="text-embedding-3-large")
 memory = MemorySaver()
@@ -176,7 +180,7 @@ def generate_propsal(state:State):
         "messages":state["messages"] + [AIMessage(content=response.model_dump_json(indent=2))]
         }
 
-def build_bidder_agent():
+def build_bidder_agent()->StateGraph:
     graph_builder = StateGraph(State)
     graph_builder.add_node(generate_search_query)
     graph_builder.add_node(retrieve)
@@ -200,6 +204,7 @@ def call_proposal_generator_agent(agent:StateGraph, project_description:str):
     generated_proposal =  final_state["proposal"]
     
     response = {
+        "llm_name": f"Hi I am {llm_name}",
         "cover_letter": generated_proposal.cover_letter,
         "questions_and_answers": [{"question": qa.question, "answer": qa.answer} for qa in generated_proposal.questions_and_answers]
     }
