@@ -43,7 +43,7 @@ class State(TypedDict):
     project_details:Optional[str]
     retrieved_projects:Optional[str]
     
-llm_name = "openai:gpt-5-nano"
+llm_name = "openai:gpt-5"
 
 llm = init_chat_model(llm_name)
 retriever_llm = init_chat_model("openai:gpt-5-nano")
@@ -180,7 +180,7 @@ def generate_propsal(state:State):
         "messages":state["messages"] + [AIMessage(content=response.model_dump_json(indent=2))]
         }
 
-def build_bidder_agent()->StateGraph:
+def build_bidder_agent(checkpointer)->StateGraph:
     graph_builder = StateGraph(State)
     graph_builder.add_node(generate_search_query)
     graph_builder.add_node(retrieve)
@@ -189,7 +189,7 @@ def build_bidder_agent()->StateGraph:
     graph_builder.add_edge("generate_search_query", "retrieve")
     graph_builder.add_edge("retrieve", "generate_propsal")
     graph_builder.set_finish_point("generate_propsal")
-    graph = graph_builder.compile(checkpointer=memory, )
+    graph = graph_builder.compile(checkpointer=checkpointer, )
     return graph
 
 def call_proposal_generator_agent(agent:StateGraph, project_description:str):

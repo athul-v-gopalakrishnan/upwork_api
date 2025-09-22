@@ -1,10 +1,11 @@
 import subprocess
 import asyncio
 from playwright.async_api import async_playwright, Page, ElementHandle
-from typing import Union, Optional
+from typing import Union, Optional, Dict
 
 from nyx.page import NyxPage
-from utils.constants import cdp_url, cdp_port, chrome_executable_path, user_data_dir
+from nyx.page_pool import PagePool
+from utils.constants import cdp_url, cdp_port, chrome_executable_path, user_data_dir, home_url
 
 class NyxBrowser:
     def __init__(self, cdp_url=cdp_url, port=cdp_port):
@@ -12,8 +13,11 @@ class NyxBrowser:
         self.port = port
         self.chrome_process = None
         self.engine = None
+        self.playwright = None
         self.num_pages = 0
         self.num_contexts = 0
+        self.idle_pages = asyncio.Queue()
+        self.page_pools = []
         
     async def start(self):
         """Start Chrome subprocess and connect via CDP."""
@@ -40,6 +44,37 @@ class NyxBrowser:
         # Connect with Playwright
         self.playwright = await async_playwright().start()
         self.engine = await self.playwright.chromium.connect_over_cdp(self.cdp_url)
+        
+        
+        
+    async def create_page_pool(self, page_pool_name:str, page_pool_size:int =5) -> PagePool:
+        """Create a pool of pages (tabs) in the first browser context."""
+        if not self.engine:
+            raise RuntimeError("Browser not started")
+        context = self.engine.contexts[0] if self.engine.contexts else await self.engine.new_context()
+        pages = []
+        for _ in range(page_pool_size):
+            if self.num_pages == 0:
+                page = context.pages[0]
+                page = await NyxPage.page_with_tracking(page)
+                await page.goto(home_url)
+                pages.append(page)
+                self.num_pages += 1
+                continue
+            page = await context.new_page()
+            page = await NyxPage.page_with_tracking(page)
+            pages.append(page)
+            self.num_pages += 1
+        page_pool = PagePool(pages, page_pool_name)
+        self.page_pools.append(page_pool)
+        return page_pool
+    
+    async def get_page_pool(self, page_pool_name:str) -> Optional[PagePool]:
+        """Retrieve a page pool by name."""
+        for pool in self.page_pools:
+            if pool.name == page_pool_name:
+                return pool
+        return None
         
     async def new_page(self, goto = None,captcha_selector:Union[str,ElementHandle] = None, page_kwargs: dict = None, goto_kwargs: dict = None,):
         """Create a new browser page (tab)."""

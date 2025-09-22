@@ -3,20 +3,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import asyncio
 import json
+import psycopg2
 
 from nyx.browser import NyxBrowser
 
-from upwork_agent.bidder_agent import build_bidder_agent,call_proposal_generator_agent
-from vault.db_config import DB_CONNECTION_STRING
+from upwork_agent.bidder_agent import build_bidder_agent,call_proposal_generator_agent, Proposal
+from vault.db_config import MEMORYDB_CONNECTION_STRING, dbname, username, password
 
 from langgraph.checkpoint.postgres import PostgresSaver
 
 state = {}
-
-# async def start_browser():
-#     browser = NyxBrowser()
-#     await browser.start()
-#     state['browser'] = browser
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -25,15 +21,19 @@ async def lifespan(app: FastAPI):
     await browser.start()
     state['browser'] = browser
     print("Browser started")
-    page = await state.get("browser").new_page() 
-    state["page"] = page
-    print("Page created")
+    page_pool = await state.get("browser").create_page_pool(page_pool_name = "upwork_pool", page_pool_size = 10)
+    state["page_pool"] = page_pool
+    print("Page pool created")
+    cm = PostgresSaver.from_conn_string(MEMORYDB_CONNECTION_STRING)
+    state["checkpointer"] = cm.__enter__()
+    state["checkpointer"].setup()
+    state["bidder_agent"] = build_bidder_agent(state["checkpointer"])
+    print("Bidder agent created")
     yield
     # Shutdown code
+    cm.__exit__(None, None, None)
     await browser.shutdown()
 
-state["bidder_agent"] = build_bidder_agent()
-print("Bidder agent created")
 state["last_url"] = ""
     
 app = FastAPI(
@@ -66,12 +66,16 @@ async def visit_job(job_url: str):
             return {"status": "No new jobs to visit."}
         state["last_url"] = job_url
         job_details = {}
-        page = state["page"] 
+        page = await state["page_pool"].get_idle_page()
         await page.goto(job_url,captcha_selector="#wNUym6",wait_until= "domcontentloaded",referer="https://www.upwork.com")
         await asyncio.sleep(2)  # Wait for a few seconds to ensure the page loads
         
         client_location = await page.get_text_content('li[data-qa="client-location"] strong')
         job_details["client_location"] = client_location.strip() if client_location else "N/A"
+        
+        if job_details["client_location"] == "N/A":
+            job_details["status"] = "Page loaded but failed to extract job details, possibility of a private job posting."
+            return job_details
         
         hire_rate = await page.get_text_content('li[data-qa="client-job-posting-stats"] div')
         job_details["hire_rate"] = hire_rate.strip() if hire_rate else "N/A"
@@ -135,11 +139,13 @@ async def visit_job(job_url: str):
     except Exception as e:
         print(e)
         return {"status": "Failed to visit job page", "error": str(e)}
+    finally:
+        await state["page_pool"].release(page)
 
 @app.get("/login_to_upwork")
 async def login_to_upwork(username: str, password: str,security_question_answer: str = None, remember_me: bool = True):
     try:
-        page = state["page"]
+        page = await state["page_pool"].get_idle_page()
         await page.goto("https://www.upwork.com/ab/account-security/login",captcha_selector="#wNUym6",wait_until= "domcontentloaded",referer="https://www.upwork.com") 
         login_page = await page.check_for_element("#login_username")
         await asyncio.sleep(2)
@@ -156,7 +162,9 @@ async def login_to_upwork(username: str, password: str,security_question_answer:
     except Exception as e:
         print(f"Error during login: {e}")
         return {"status": "Login attempt failed", "error": str(e)}
-    return {"status": "Login attempt finished"}
+    finally:
+        await state["page_pool"].release(page)
+        return {"status": "Login attempt finished"}
 
 @app.post("/generate_proposal")
 async def generate_proposal_api(job_description: str, tech:str = None, questions: str = None):
@@ -170,8 +178,10 @@ async def generate_proposal_api(job_description: str, tech:str = None, questions
     proposal = call_proposal_generator_agent(state["bidder_agent"], job_details)
     return proposal
 
-# @app.post("/apply_for_job")
-# async def apply_for_job()
+@app.post("/apply_for_job")
+async def apply_for_job(job_url: str, proposal: Proposal):
+    page = await state["page_pool"].get_idle_page()
+    return page
     
 
 if __name__ == "__main__":

@@ -5,3 +5,5 @@ chrome_executable_path = "/usr/bin/google-chrome"
 user_data_dir = "/home/neo-new/playwright-profiles/cloned-profile"
 
 cloudfare_challenge_div_id = "LsMgo8"
+
+home_url = "about:blank"

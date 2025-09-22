@@ -4,3 +4,4 @@ __pycache__/
 vault/
 data/
 *.ipynb
+linked_in.py
