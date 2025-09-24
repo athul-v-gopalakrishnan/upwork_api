@@ -18,7 +18,7 @@ class NyxBrowser:
         self.num_contexts = 0
         self.idle_pages = asyncio.Queue()
         self.page_pools = []
-        
+    
     async def start(self):
         """Start Chrome subprocess and connect via CDP."""
         # Launch Chrome with remote debugging

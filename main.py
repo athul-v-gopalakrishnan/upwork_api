@@ -3,12 +3,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import asyncio
 import json
-import psycopg2
 
 from nyx.browser import NyxBrowser
 
 from upwork_agent.bidder_agent import build_bidder_agent,call_proposal_generator_agent, Proposal
 from vault.db_config import MEMORYDB_CONNECTION_STRING, dbname, username, password
+from db_utils.access_db import add_proposal, create_proposals_table, get_proposal_by_url
 
 from langgraph.checkpoint.postgres import PostgresSaver
 
@@ -29,6 +29,9 @@ async def lifespan(app: FastAPI):
     state["checkpointer"].setup()
     state["bidder_agent"] = build_bidder_agent(state["checkpointer"])
     print("Bidder agent created")
+    state["application_underway"] = False
+    await create_proposals_table()
+    print("proposals table created.")
     yield
     # Shutdown code
     cm.__exit__(None, None, None)
@@ -67,7 +70,7 @@ async def visit_job(job_url: str):
         state["last_url"] = job_url
         job_details = {}
         page = await state["page_pool"].get_idle_page()
-        await page.goto(job_url,captcha_selector="#wNUym6",wait_until= "domcontentloaded",referer="https://www.upwork.com")
+        await page.goto(job_url,captcha_selector="#AJXH4",wait_until= "domcontentloaded",referer="https://www.upwork.com")
         await asyncio.sleep(2)  # Wait for a few seconds to ensure the page loads
         
         client_location = await page.get_text_content('li[data-qa="client-location"] strong')
@@ -126,10 +129,14 @@ async def visit_job(job_url: str):
             question_number = 1
             questions = []
             question_elements = await page.get_all_elements('section[data-test="Questions"] ol li')
+            print(question_elements)
             for q_element in question_elements:
+                print(q_element)
                 question_text = await page.get_text_content(q_element)
                 questions.append(str(question_number) + ". " + question_text.strip() + "\n")
+                question_number+=1
             job_details["questions"] = " ".join(questions)
+            print(job_details["questions"])
         else:
             job_details["questions"] = "N/A"
         
@@ -167,7 +174,7 @@ async def login_to_upwork(username: str, password: str,security_question_answer:
         return {"status": "Login attempt finished"}
 
 @app.post("/generate_proposal")
-async def generate_proposal_api(job_description: str, tech:str = None, questions: str = None):
+async def generate_proposal_api(job_url:str, job_description: str, tech:str = None, questions: str = None):
     job_details = {
         "summary": job_description,
         "technologies": tech if tech else "N/A",
@@ -175,14 +182,40 @@ async def generate_proposal_api(job_description: str, tech:str = None, questions
     }
     job_details = json.dumps(job_details)
     print(f"Job Details: {job_details}")
-    proposal = call_proposal_generator_agent(state["bidder_agent"], job_details)
-    return proposal
+    proposal, proposal_model = call_proposal_generator_agent(state["bidder_agent"], job_details)
+    response = await add_proposal(job_url=job_url, proposal = proposal_model, applied=False)
+    if response:
+        return proposal
+    else:
+        print(response)
+        return response
+    
 
 @app.post("/apply_for_job")
-async def apply_for_job(job_url: str, proposal: Proposal):
-    page = await state["page_pool"].get_idle_page()
-    return page
+async def apply_for_job(job_url: str):
+    try:
+        if not state["application_underway"]:
+            state["application_underway"] = True
+            job_proposal = await get_proposal_by_url(job_url=job_url)
+            page = await state["page_pool"].get_idle_page()
+            await page.goto(job_url,captcha_selector="#AJXH4", wait_until= "domcontentloaded", referer="https://www.upwork.com")
+            await asyncio.sleep(2)
+            
+            await page.scroll_by(450)
+            await page.click(selector = 'button[data-cy="submit-proposal-button"]')
+            await asyncio.sleep(3)
+            cover_letter = job_proposal.cover_letter
+            await page.copy_to_clipboard(cover_letter)
+            await page.paste_from_clipboard(selector = 'textarea[aria-labelledby="cover_letter_label"]')
+            input("enter to fnish : ")
+        else:
+            return {"status" : "Please wait for the current application process to finish to apply for more jobs."}
+    except Exception as e:
+        print(f"Excception occured : {e}")
+    finally:
+        await state["page_pool"].release(page)
+        state["application_underway"] = False
     
 
 if __name__ == "__main__":
-    asyncio.run(login_to_upwork("vggvn8n@gmail.com", "upwork@automation"))
+    asyncio.run(login_to_upwork("https://www.upwork.com/jobs/~021970351209921008305?link=new_job&frkscc=HilbNikXAzRX", "upwork@automation"))

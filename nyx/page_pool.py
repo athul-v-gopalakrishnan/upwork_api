@@ -18,6 +18,7 @@ class PagePool:
     
     async def release(self, page: NyxPage):
         """Release a page back to the pool."""
+        await asyncio.sleep(2)
         await page.goto(home_url)
         await self.idle_pages.put(page)
     

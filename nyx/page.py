@@ -41,12 +41,17 @@ class NyxPage:
         except Exception as e:
             print(f"Warning: Could not perform visual click: {e}")
             
+    async def scroll_by(self, scroll_length:int, randomness:bool = True):
+        if randomness:
+            random_scroll_length = random.randint(int(scroll_length*0.75), int(scroll_length*1.25))
+            await self._page.evaluate(f"window.scrollBy({{ top: {random_scroll_length}, behavior: 'smooth' }});")
+        else:
+            await self._page.evaluate(f"window.scrollBy({{ top: {scroll_length}, behavior: 'smooth' }});")
+            
     async def fill_field_and_enter(self, selector:Union[str, ElementHandle], text:str):
         """Fill a field and press Enter with the visual cursor"""
         try:
-            await self._page.evaluate("""
-                        window.scrollBy({ top: 300, behavior: 'smooth' });
-                        """)
+            await self.scroll_by(300)
             await self.nyx_cursor.cursor.click(selector=selector)
             await self._page.keyboard.press("Control+A")
             await self._page.keyboard.press("Backspace")
@@ -68,9 +73,7 @@ class NyxPage:
     async def get_text_content(self, selector:Union[str, ElementHandle]) -> Optional[str]:
         """Get text content of an element"""
         try:
-            await self._page.evaluate("""
-                        window.scrollBy({ top: 300, behavior: 'smooth' });
-                        """)
+            await self.scroll_by(300)
             element = await self._page.query_selector(selector) if isinstance(selector, str) else selector
             if element:
                 return await element.text_content()
@@ -84,9 +87,7 @@ class NyxPage:
     async def get_attribute(self, selector:Union[str, ElementHandle], attribute_name:str) -> Optional[str]:
         """Get attribute value of an element"""
         try:
-            await self._page.evaluate("""
-                        window.scrollBy({ top: 300, behavior: 'smooth' });
-                        """)
+            await self.scroll_by(300)
             element = await self._page.query_selector(selector) if isinstance(selector, str) else selector
             if element:
                 return await element.get_attribute(attribute_name)
@@ -99,19 +100,33 @@ class NyxPage:
         
     async def get_element(self, selector:Union[str, ElementHandle]):
         try:
-            await self._page.evaluate("""
-                        window.scrollBy({ top: 300, behavior: 'smooth' });
-                        """)
+            await self.scroll_by(300)
             element = await self._page.query_selector(selector) if isinstance(selector, str) else selector
             return element
         except Exception as e:
             print(f"Warning: Could not get element '{selector}': {e}")
             return None 
+        
+    async def copy_to_clipboard(self, text: str):
+        try:
+            await self._page.evaluate("(text) => navigator.clipboard.writeText(text)", text)
+        except Exception as e:
+            print(f"Could not copy text : {e}")
+            
+    async def paste_from_clipboard(self, selector:Union[str, ElementHandle], to_enter:bool = False):
+        try:
+            await self.nyx_cursor.cursor.click(selector=selector)
+            await self._page.keyboard.press("Control+v")
+            if to_enter:
+                await self._page.keyboard.press("Enter")
+        except Exception as e:
+            print(f"Warning: Could not fill field and press Enter: {e}")
+        
     
     async def get_all_elements(self, selector:Union[str, ElementHandle]):
         try:
-            element = await self._page.query_selector_all(selector) if isinstance(selector, str) else selector
-            return element
+            elements = await self._page.query_selector_all(selector) if isinstance(selector, str) else selector
+            return elements
         except Exception as e:
             print(f"Warning: Could not get element '{selector}': {e}")
             return None 
@@ -127,6 +142,7 @@ class NyxPage:
             if challenge_div:
                 print("Cloudflare challenge detected, waiting to be solved...")
                 checkbox = await self._page.query_selector(selector=selector)
+                print("\n\n",checkbox)
                 if checkbox:
                     await self.nyx_cursor.captcha_click(checkbox)
                     
