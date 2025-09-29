@@ -5,3 +5,4 @@ vault/
 data/
 *.ipynb
 linked_in.py
+*.pkl

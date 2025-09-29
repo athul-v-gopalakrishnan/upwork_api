@@ -1,6 +1,6 @@
 import random
 import asyncio
-from typing import Union, Optional
+from typing import Union, Optional, List
 
 from playwright.async_api import Page, ElementHandle
 
@@ -21,6 +21,12 @@ class NyxPage:
         # delegate unknown attributes to real Playwright page
         return getattr(self._page, name)
     
+    async def go_back(self):
+        try:
+            await self._page.go_back()
+        except Exception as e:
+            print(f"Exception occured : {e}")
+        
     async def goto(self, url: str, captcha_selector:Union[str,ElementHandle] = None, **kwargs):
         """Navigate to a URL"""
         kwargs.setdefault("timeout", 30000)
@@ -47,6 +53,42 @@ class NyxPage:
             await self._page.evaluate(f"window.scrollBy({{ top: {random_scroll_length}, behavior: 'smooth' }});")
         else:
             await self._page.evaluate(f"window.scrollBy({{ top: {scroll_length}, behavior: 'smooth' }});")
+            
+    async def scroll_to_element_center(self, selector: Union[str, ElementHandle], randomness: bool = True):
+        """
+        Scrolls the page so the element's center y is at a random position in the viewport.
+        Uses Playwright's bounding_box().
+        """
+        element = await self._page.query_selector(selector) if isinstance(selector, str) else selector
+        if not element:
+            print(f"Element not found for selector: {selector}")
+            return
+
+        box = await element.bounding_box()
+        if not box:
+            print(f"Could not get bounding box for selector: {selector}")
+            return
+
+        # Get viewport size and scroll position
+        viewport = await self._page.evaluate("() => ({height: window.innerHeight, scrollY: window.scrollY})")
+
+        elem_center_y = box["y"] + box["height"] / 2
+
+        # Randomize target position in viewport (not always center)
+        if randomness:
+            target_y = random.uniform(0.3, 0.7) * viewport["height"]
+        else:
+            target_y = viewport["height"] / 2
+
+        # Calculate scroll position
+        scroll_to_y = elem_center_y - target_y
+
+        await self._page.evaluate(
+            """y => window.scrollTo({top: y, behavior: 'smooth'})""",
+            scroll_to_y
+        )
+        await asyncio.sleep(random.uniform(0.3, 0.8))
+
             
     async def fill_field_and_enter(self, selector:Union[str, ElementHandle], text:str):
         """Fill a field and press Enter with the visual cursor"""
@@ -97,6 +139,22 @@ class NyxPage:
         except Exception as e:
             print(f"Warning: Could not get attribute '{attribute_name}': {e}")
             return None
+        
+    async def get_all_similar_attributes(self, selector:Union[str, ElementHandle], attribute_name:str) -> List[Optional[str]]:
+        try:
+            await self.scroll_by(300)
+            attribute_values = []
+            elements = await self._page.query_selector_all(selector) if isinstance(selector, str) else selector
+            if elements:
+                for element in elements:
+                    attribute_values.append(await element.get_attribute(attribute_name))
+                return attribute_values
+            else:
+                print(f"Warning: Elements not found for selector: {selector}")
+                return attribute_values
+        except Exception as e:
+            print(f"Warning: Could not get attribute '{attribute_name}': {e}")
+            return attribute_values
         
     async def get_element(self, selector:Union[str, ElementHandle]):
         try:
