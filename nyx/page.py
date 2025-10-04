@@ -3,6 +3,7 @@ import asyncio
 from typing import Union, Optional, List
 
 from playwright.async_api import Page, ElementHandle
+from playwright.async_api import TimeoutError
 
 from nyx.cursor import VisualGhostCursor
 
@@ -27,7 +28,7 @@ class NyxPage:
         except Exception as e:
             print(f"Exception occured : {e}")
         
-    async def goto(self, url: str, captcha_selector:Union[str,ElementHandle] = None, **kwargs):
+    async def goto(self, url: str, captcha_selector:Union[str,ElementHandle] = None, wait_for = None, **kwargs):
         """Navigate to a URL"""
         kwargs.setdefault("timeout", 30000)
         try:
@@ -36,14 +37,28 @@ class NyxPage:
             print(f"Navigated to {url}")
             if captcha_selector:
                 await self.expect_and_solve_cloudfare_challenge(selector=captcha_selector)
-            await asyncio.sleep(2)
+            if wait_for:
+                await self._page.wait_for_selector(wait_for, timeout=15000)
         except Exception as e:
             print(f"Warning: Could not navigate to {url}: {e}")
 
-    async def click(self, selector:Optional[Union[str, ElementHandle]]):
+    async def click(self, selector:Optional[Union[str, ElementHandle]],wait_for:Optional[Union[str, ElementHandle]] = None, expect_navigation:bool = False):
         """Perform a click with the visual cursor"""
         try:
-            await self.nyx_cursor.cursor.click(selector=selector)
+            if wait_for:
+                if not expect_navigation:
+                    await self.nyx_cursor.cursor.click(selector=selector)
+                    await self._page.wait_for_selector(selector=wait_for, timeout=15000)
+                else:
+                    async with self._page.expect_navigation():
+                        await self.nyx_cursor.cursor.click(selector=selector)
+                    await self._page.wait_for_selector(selector=wait_for, timeout=15000)
+            else:
+                if not expect_navigation:
+                    await self.nyx_cursor.cursor.click(selector=selector)
+                else:
+                    async with self._page.expect_navigation():
+                        await self.nyx_cursor.cursor.click(selector=selector)
         except Exception as e:
             print(f"Warning: Could not perform visual click: {e}")
             
@@ -192,20 +207,24 @@ class NyxPage:
     async def expect_and_solve_cloudfare_challenge(self, selector:Union[str,ElementHandle] , timeout:int=15000):
         """Wait for and solve Cloudflare challenge if present"""
         try:
-            await asyncio.sleep(10)
+            await asyncio.sleep(2)
             # Wait for Cloudflare challenge to appear
             challenge_div = await self._page.query_selector(selector="div[class*='challenge-container']")
-            print("\n\n",challenge_div,"\n\n")
             
             if challenge_div:
                 print("Cloudflare challenge detected, waiting to be solved...")
+                await asyncio.sleep(7)
                 checkbox = await self._page.query_selector(selector=selector)
                 print("\n\n",checkbox)
                 if checkbox:
                     await self.nyx_cursor.captcha_click(checkbox)
-                    
-                    await self._page.wait_for_selector(selector, state='detached', timeout=60000)
-                    print("Cloudflare challenge solved.")
+                    try:
+                        await self._page.wait_for_selector(selector, state='detached', timeout=60000)
+                        print("Cloudflare challenge solved.")
+                    except TimeoutError:
+                        await self.nyx_cursor.captcha_click(checkbox)
+                    except Exception as e:
+                        print(f"Warning: wait_for_selector for detachment failed: {e}")
                 else:
                     print("Captcha found but check the selector provided.")
             else:

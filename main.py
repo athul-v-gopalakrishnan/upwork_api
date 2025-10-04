@@ -14,9 +14,11 @@ from nyx.page import NyxPage
 from upwork_agent.bidder_agent import build_bidder_agent,call_proposal_generator_agent, Proposal
 from vault.db_config import MEMORYDB_CONNECTION_STRING, dbname, username, password
 from db_utils.access_db import add_proposal, create_proposals_table, get_proposal_by_url, create_jobs_table, get_job_by_url, add_job
-from utils.constants import send_job_updates_webhook_url
+from db_utils.queue_manager import create_queue_table, enqueue_task, get_next_task
+from utils.constants import send_job_updates_webhook_url, cloudfare_challenge_div_id, home_url
 
 from langgraph.checkpoint.postgres import PostgresSaver
+from langgraph.checkpoint.memory import MemorySaver
 
 state = {}
 latest_urls_path = 'latest_urls.pkl'
@@ -61,12 +63,14 @@ async def lifespan(app: FastAPI):
         "Business Intelligence" : "https://www.upwork.com/nx/search/jobs/?amount=2000-&contractor_tier=2,3&duration_v3=month,semester,ongoing&hourly_rate=15-&payment_verified=1&q=data%20analysis%20or%20data%20analyst%20or%20quicksight%20or%20etl%20or%20elt%20or%20dax%20or%20data%20lakehouse%20or%20sql%20or%20bi%20or%20ai%20byte%20or%20business%20intelligence&sort=recency&t=0,1"
     }
     state["latest_urls"] = latest_urls
-    page_pool = await state.get("browser").create_page_pool(page_pool_name = "upwork_pool", page_pool_size = 10)
-    state["page_pool"] = page_pool
+    page = await state.get("browser").new_page()
+    state["page"] = page
     print("Page pool created")
-    cm = PostgresSaver.from_conn_string(MEMORYDB_CONNECTION_STRING)
-    state["checkpointer"] = cm.__enter__()
-    state["checkpointer"].setup()
+    # cm = PostgresSaver.from_conn_string(MEMORYDB_CONNECTION_STRING)
+    # state["checkpointer"] = cm.__enter__()
+    # state["checkpointer"].setup()
+    cm = MemorySaver()
+    state["checkpointer"] = cm
     state["bidder_agent"] = build_bidder_agent(state["checkpointer"])
     print("Bidder agent created")
     state["application_underway"] = False
@@ -74,9 +78,11 @@ async def lifespan(app: FastAPI):
     print(proposal_table_status, msg)
     job_table_status, msg = await create_jobs_table()
     print(job_table_status, msg)
+    task_queue_table_status, msg = await create_queue_table()
+    print(task_queue_table_status, msg)
     yield
     # Shutdown code
-    cm.__exit__(None, None, None)
+    # cm.__exit__(None, None, None)
     await browser.shutdown()
 
 state["last_url"] = ""
@@ -104,24 +110,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/check_for_jobs")
+@app.get("/enqueue_task")
+async def enqueue_task_api(task_type:str, payload:dict=None, priority:int=0):
+    status, message = await enqueue_task(task_type=task_type, payload=payload, priority=priority)
+    return {"status" : status, "message" : message}
+
 async def check_for_jobs():
     try:
-        page = await state["page_pool"].get_idle_page() 
+        page = state["page"]
+        login_status, message = await login_to_upwork(page=page, username="ali-maharuf", password="@neomaharuf124!", security_question_answer="Neoito")
+        if not login_status:
+            return {"status" : "Failed", "message" : f"Login failed - {message}"}
         upwork_url = "https://www.upwork.com"
         session_latest_links = {}
         new_jobs_num = 0
         async with httpx.AsyncClient() as client:
             for category, url in state["filter_urls"].items():
                 first_link = True
-                await page.goto(url,captcha_selector="#AJXH4",wait_until= "domcontentloaded",referer="https://www.upwork.com/")
-                await asyncio.sleep(2)
+                await page.goto(url,wait_for = 'div[data-test="UpCInput"]', captcha_selector=cloudfare_challenge_div_id,wait_until= "domcontentloaded",referer="https://www.upwork.com/")
                 job_postings = await page.get_all_elements(selector='article[data-test="JobTile"]')
                 for job_posting in job_postings:
                     link_div = await job_posting.query_selector('a[data-test="job-tile-title-link UpLink"]')
-                    link = await link_div.text_content()
+                    link = await link_div.get_attribute('href')
                     if not link:
-                        payload = {"status":"Problem extracting link ... \nMaybe the website structure has changed"}
+                        payload = {"status": "Failed", "message":"Problem extracting link ... \nMaybe the website structure has changed"}
                         print(payload)
                         await client.post(url = send_job_updates_webhook_url, json = payload)
                         print("link_extraction_failed")
@@ -133,8 +145,7 @@ async def check_for_jobs():
                     if link == state["latest_urls"].get(category,None):
                         print(f"last_link in {category}")
                         break
-                    await page.click(job_posting)
-                    await asyncio.sleep(2)
+                    await page.click(link_div, wait_for='li[data-qa="client-location"] strong')
                     
                     status, job_details = await scrape_job(page=page)
                     if status:
@@ -155,24 +166,20 @@ async def check_for_jobs():
                             new_jobs_num += 1
                             print(f"job {new_jobs_num} sent.")
                     else:
+                        job_details["url"] = link
                         await client.post(url = send_job_updates_webhook_url, json = job_details)
                         print(f"scraping failed - {job_details}")
-                        return
                     await page.go_back()
                     await asyncio.sleep(1)
-                    if new_jobs_num == 3:
-                        print("working aan hehe")
-                        return
-                
-        
         state["latest_urls"] = session_latest_links 
         with open(latest_urls_path, 'wb') as f:
+            print("Saving latest urls ...")
             pickle.dump(session_latest_links, f)   
         return {"status" : f"Successfully checked for new jobs. {new_jobs_num} jobs found."}   
     except Exception as e:
         return {"status" : f"Check failed. Error - {e}"}
     finally:
-        await state["page_pool"].release(page)
+        await page.goto(home_url)
     
 
 async def scrape_job(page:NyxPage):
@@ -183,17 +190,18 @@ async def scrape_job(page:NyxPage):
         job_details["client_location"] = client_location.strip() if client_location else "N/A"
         
         if job_details["client_location"] == "N/A":
-            job_details["status"] = "Page loaded but failed to extract job details, possibility of a private job posting."
-            return job_details
+            job_details["status"] = "Failed"
+            job_details["message"] = "Page loaded but failed to extract job details, possibility of a private job posting."
+            return False, job_details
         
         hire_rate = await page.get_text_content('li[data-qa="client-job-posting-stats"] div')
         job_details["hire_rate"] = hire_rate.strip() if hire_rate else "N/A"
         
         total_spent = await page.get_text_content('li strong[data-qa="client-spend"] span')
-        job_details["total_spent"] = total_spent.strip() if hire_rate else "N/A"
+        job_details["total_spent"] = total_spent.strip() if total_spent else "N/A"
         
         member_since = await page.get_text_content('li[data-qa="client-contract-date"] small')
-        job_details["member_since"] = member_since.strip() if hire_rate else "N/A"
+        job_details["member_since"] = member_since.strip() if member_since else "N/A"
         
         summary_element = await page.get_all_elements('div[data-test="Description"] p')
         summary = ""
@@ -228,16 +236,11 @@ async def scrape_job(page:NyxPage):
             skills.append(skill.strip() + "\n")
         job_details["skills"] = ", ".join(skills)
         
-        print(f"Checking for questions section...")
-        print(await page.check_for_element('section[data-test="Questions"]'))
-        
         if await page.check_for_element('section[data-test="Questions"]'):
             question_number = 1
             questions = []
             question_elements = await page.get_all_elements('section[data-test="Questions"] ol li')
-            print(question_elements)
             for q_element in question_elements:
-                print(q_element)
                 question_text = await page.get_text_content(q_element)
                 questions.append(str(question_number) + ". " + question_text.strip() + "\n")
                 question_number+=1
@@ -245,19 +248,17 @@ async def scrape_job(page:NyxPage):
             print(job_details["questions"])
         else:
             job_details["questions"] = "N/A"
+        print(job_details)
         return True, job_details
     except Exception as e:
         print(e)
-        await state["page_pool"].release(page)
-        return False, {"status": "Failed to visit job page", "error": str(e)}
+        await page.goto(home_url)
+        return False, {"status": "Failed", "message": str(e)}
 
         
-
-@app.get("/login_to_upwork")
-async def login_to_upwork(username: str, password: str, security_question_answer: str = None, remember_me: bool = True):
+async def login_to_upwork(page:NyxPage, username: str, password: str, security_question_answer: str = None, remember_me: bool = True):
     try: 
-        page = await state["page_pool"].get_idle_page()
-        await page.goto("https://www.upwork.com/ab/account-security/login",captcha_selector="#wNUym6",wait_until= "domcontentloaded",referer="https://www.upwork.com") 
+        await page.goto("https://www.upwork.com/ab/account-security/login",captcha_selector=cloudfare_challenge_div_id,wait_until= "domcontentloaded",referer="https://www.upwork.com") 
         login_page = await page.check_for_element("#login_username")
         await asyncio.sleep(2)
         if login_page:
@@ -269,46 +270,50 @@ async def login_to_upwork(username: str, password: str, security_question_answer
             await asyncio.sleep(3)
             await page.fill_field_and_enter('#login_answer', security_question_answer)
         elif await page.check_for_element('section[data-test="freelancer-sidebar-profile"]'):
-            return {"status": "Already logged in."} 
+            return True, "Already logged in." 
         else:
-            return {"status" : "Login page could not be found."}
+            return False, "Login page could not be found."
     except Exception as e:
         print(f"Error during login: {e}")
-        return {"status": "Login attempt failed", "error": str(e)}
+        return False, f"Login attempt failed - {e}"
     finally:
-        await state["page_pool"].release(page)
-        return {"status": "Login attempt finished"}
+        await page.goto(home_url)
 
 @app.post("/generate_proposal")
-async def generate_proposal_api(job_url:str, job_description: str, tech:str = None, questions: str = None):
-    job_details = {
-        "summary": job_description,
-        "technologies": tech if tech else "N/A",
-        "questions": questions if questions else "N/A"
-    }
+async def generate_proposal_api(job_url:str):
+    job_details = await get_job_by_url(job_url=job_url)
+    if not job_details:
+        return {"status" : "Failed", "message" : "Job details not found in database."}
     job_details = json.dumps(job_details)
     print(f"Job Details: {job_details}")
-    proposal, proposal_model = call_proposal_generator_agent(state["bidder_agent"], job_details)
+    proposal, proposal_model = await call_proposal_generator_agent(state["bidder_agent"], job_details)
+    payload = {
+        "status" : "Done",
+        "job_url" : job_url,
+        "proposal" : proposal
+    }
     response = await add_proposal(job_url=job_url, proposal = proposal_model, applied=False)
     if response:
-        return proposal
+        return payload
     else:
         print(response)
         return response
     
 
-@app.post("/apply_for_job")
 async def apply_for_job(job_url: str):
     try:
         if not state["application_underway"]:
             state["application_underway"] = True
             job_proposal = await get_proposal_by_url(job_url=job_url)
-            page = await state["page_pool"].get_idle_page()
-            await page.goto(job_url,captcha_selector="#AJXH4", wait_until= "domcontentloaded", referer="https://www.upwork.com")
+            page = state["page"]
+            login_status, message = await login_to_upwork(page=page, username="ali-maharuf", password="@neomaharuf124!", security_question_answer="Neoito")
+            if not login_status:
+                return {"status" : "Failed", "message" : f"Login failed - {message}"}
+            await page.goto(job_url, wait_for = 'button[data-cy="submit-proposal-button"]', captcha_selector=cloudfare_challenge_div_id, wait_until= "domcontentloaded", referer="https://www.upwork.com")
             await asyncio.sleep(2)
             
             await page.scroll_by(450)
-            await page.click(selector = 'button[data-cy="submit-proposal-button"]')
+            await page.click(selector = 'button[data-cy="submit-proposal-button"]', expect_navigation=True)
             await asyncio.sleep(3)
             cover_letter = job_proposal.cover_letter
             await page.copy_to_clipboard(cover_letter)
@@ -327,11 +332,12 @@ async def apply_for_job(job_url: str):
                 await page.paste_from_clipboard(selector = text_area)
             input("enter to finish : ")
         else:
-            return {"status" : "Please wait for the current application process to finish to apply for more jobs."}
+            return {"status" : "Failed", "message" : "Please wait for the current application process to finish to apply for more jobs."}
     except Exception as e:
         print(f"Excception occured : {e}")
+        return {"status" : "Failed", "message" : "Error occured during application - {e}"}
     finally:
-        await state["page_pool"].release(page)
+        await page.goto(home_url)
         state["application_underway"] = False
         
 def question_answer_parser(proposal:Proposal):
@@ -341,6 +347,22 @@ def question_answer_parser(proposal:Proposal):
         answer = question_and_answer.answer.strip()
         q_a_dict[question] = answer
     return q_a_dict
+
+
+async def worker_loop():
+    while True:
+        task = await get_next_task()
+        if task:
+            task_type = task['task_type']
+            payload = task.get('payload', {})
+            if task_type == 'check_for_jobs':
+                await check_for_jobs()
+            elif task_type == 'apply_for_job':
+                job_url = payload.get('job_url')
+                if job_url:
+                    await apply_for_job(job_url=job_url)
+            # Add more task types as needed
+        await asyncio.sleep(3)  # Polling interval
 
 if __name__ == "__main__":
     hehe = asyncio.run(question_answer_parser("https://www.upwork.com/jobs/~021970706874169818481?link=new_job&frkscc=NYf13dCiTalJ"))

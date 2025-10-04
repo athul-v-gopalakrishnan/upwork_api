@@ -109,9 +109,9 @@ async def add_proposal(job_url: str, proposal:Proposal, applied: bool = False, a
                 applied,
                 approved_by
             )
-        return True, "Proposal added successfully"
+        return True, {"status":"Done", "message" : "Proposal added successfully"}
     except Exception as e:
-        return False, f"Pushing job {job_url} to db failed - {e}"
+        return False, {"status" : "Failed", "message" : f"Pushing job {job_url} to db failed - {e}"}
     finally:
         await pool.close()
         
@@ -134,7 +134,7 @@ async def add_job(job_url: str, job_description:dict):
             )
         return True, {"status":"Job added successfully"}
     except Exception as e:
-        return False, {"status" : f"Pushing job {job_url} to db failed - {e}"}
+        return False, {"status":"Failed", "message" : f"Pushing job {job_url} to db failed - {e}"}
     finally:
         await pool.close()
         
@@ -299,5 +299,5 @@ async def check_table_schema(table_name: str):
         await pool.close()
 
 if __name__ == "__main__":
-    proposal = asyncio.run(check_table_schema("jobs"))
+    proposal = asyncio.run(get_job_by_url("https://www.upwork.comServiceNow SAM Architect"))
     print(proposal)

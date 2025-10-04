@@ -4,10 +4,12 @@ cdp_port = 9222
 chrome_executable_path = "/usr/bin/google-chrome"
 user_data_dir = "/home/neo-new/playwright-profiles/cloned-profile"
 
-cloudfare_challenge_div_id = "LsMgo8"
+cloudfare_challenge_div_id = "#WsTZ8"
 
 home_url = "about:blank"
 
 proposals_db_name = "proposals"
 
-send_job_updates_webhook_url = "http://localhost:5678/webhook-test/send_job_updates"
+send_job_updates_webhook_url_test = "http://localhost:5678/webhook-test/send_job_updates"
+send_job_updates_webhook_url = "http://localhost:5678/webhook/send_job_updates"
+

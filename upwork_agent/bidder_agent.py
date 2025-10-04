@@ -254,12 +254,12 @@ def build_bidder_agent(checkpointer)->StateGraph:
     graph = graph_builder.compile(checkpointer=checkpointer, )
     return graph
 
-def call_proposal_generator_agent(agent:StateGraph, project_description:str):
+async def call_proposal_generator_agent(agent:StateGraph, project_description:str):
     initial_state:State = {
         "messages":[HumanMessage(content=f"The project details are given below:\n{project_description}")],
         "project_details":project_description,
     }
-    final_state = agent.invoke(initial_state, config={
+    final_state = await agent.ainvoke(initial_state, config={
                     "configurable": {
                         "thread_id": "user123",
                     }})
