@@ -5,17 +5,14 @@ from asyncpg.utils import _quote_ident
 
 from upwork_agent.bidder_agent import Proposal
 
+from db_utils.db_pool import get_pool,close_pool, init_pool
+
 # Adjust these imports/values as needed for your project
 from vault.db_config import dbname, username, password
 
 async def create_proposals_table():
     try:
-        pool = await asyncpg.create_pool(
-            user=username,
-            password=password,
-            database=dbname,
-            host="localhost"
-        )
+        pool = await get_pool()
         async with pool.acquire() as conn:
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS proposals (
@@ -29,17 +26,10 @@ async def create_proposals_table():
         return True, "Created proposals table"
     except Exception as e:
         return False, f"Could not create the jobs table - {e}"
-    finally:
-        await pool.close()
     
 async def create_jobs_table():
     try:
-        pool = await asyncpg.create_pool(
-            user=username,
-            password=password,
-            database=dbname,
-            host="localhost"
-        )
+        pool = await get_pool()
         async with pool.acquire() as conn:
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS jobs (
@@ -51,17 +41,10 @@ async def create_jobs_table():
         return True, "Created jobs table"
     except Exception as e:
         return False, f"Could not create the jobs table - {e}"
-    finally:
-        await pool.close()
     
 async def clear_proposals_table():
     try:
-        pool = await asyncpg.create_pool(
-            user=username,
-            password=password,
-            database=dbname,
-            host="localhost"
-        )
+        pool = await get_pool()
         async with pool.acquire() as conn:
             await conn.execute("DELETE FROM proposals;")
         return True, "Cleared proposals table"
@@ -72,19 +55,12 @@ async def clear_proposals_table():
     
 async def clear_jobs_table():
     try:
-        pool = await asyncpg.create_pool(
-            user=username,
-            password=password,
-            database=dbname,
-            host="localhost"
-        )
+        pool = await get_pool()
         async with pool.acquire() as conn:
             await conn.execute("DELETE FROM jobs;")
         return True, "Cleared jobs table"
     except Exception as e:
         return False, f"Couldnot clear table - {e}"
-    finally:
-        await pool.close()
     
 async def add_proposal(job_url: str, proposal:Proposal, applied: bool = False, approved_by: str = None):
     """
@@ -92,12 +68,7 @@ async def add_proposal(job_url: str, proposal:Proposal, applied: bool = False, a
     proposal_model: a Pydantic model instance.
     """
     try:
-        pool = await asyncpg.create_pool(
-            user=username,
-            password=password,
-            database=dbname,
-            host="localhost"
-        )
+        pool = await get_pool()
         async with pool.acquire() as conn:
             await conn.execute(
                 """
@@ -112,17 +83,10 @@ async def add_proposal(job_url: str, proposal:Proposal, applied: bool = False, a
         return True, {"status":"Done", "message" : "Proposal added successfully"}
     except Exception as e:
         return False, {"status" : "Failed", "message" : f"Pushing job {job_url} to db failed - {e}"}
-    finally:
-        await pool.close()
         
 async def add_job(job_url: str, job_description:dict):
     try:
-        pool = await asyncpg.create_pool(
-            user=username,
-            password=password,
-            database=dbname,
-            host="localhost"
-        )
+        pool = await get_pool()
         async with pool.acquire() as conn:
             await conn.execute(
                 """
@@ -135,8 +99,6 @@ async def add_job(job_url: str, job_description:dict):
         return True, {"status":"Job added successfully"}
     except Exception as e:
         return False, {"status":"Failed", "message" : f"Pushing job {job_url} to db failed - {e}"}
-    finally:
-        await pool.close()
         
 async def get_proposal_by_url(job_url: str):
     """
@@ -144,12 +106,7 @@ async def get_proposal_by_url(job_url: str):
     Returns the row as a dict, or None if not found.
     """
     try:
-        pool = await asyncpg.create_pool(
-            user=username,
-            password=password,
-            database=dbname,
-            host="localhost"
-        )
+        pool = await get_pool()
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT * FROM proposals WHERE job_url = $1;", job_url
@@ -161,8 +118,6 @@ async def get_proposal_by_url(job_url: str):
             return None
     except Exception as e:
         print(f"Could not retrieve proposal - {e}")
-    finally:
-        await pool.close()
         
 async def get_job_by_url(job_url: str):
     """
@@ -170,12 +125,7 @@ async def get_job_by_url(job_url: str):
     Returns the row as a dict, or None if not found.
     """
     try:
-        pool = await asyncpg.create_pool(
-            user=username,
-            password=password,
-            database=dbname,
-            host="localhost"
-        )
+        pool = await get_pool()
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT * FROM jobs WHERE job_url = $1;", job_url
@@ -186,45 +136,43 @@ async def get_job_by_url(job_url: str):
             return None
     except Exception as e:
         print(f"Could not retrieve proposal - {e}")
-    finally:
-        await pool.close()
         
     
 async def view_proposals_table(num_rows: int = 10):
     """
     View the first `num_rows` rows from the proposals table.
     """
-    pool = await asyncpg.create_pool(
-        user=username,
-        password=password,
-        database=dbname,
-        host="localhost"
-    )
+    pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             f"SELECT * FROM proposals ORDER BY id LIMIT $1;", num_rows
         )
         for row in rows:
             print(dict(row))
-    await pool.close()
     
 async def view_jobs_table(num_rows: int = 10):
     """
     View the first `num_rows` rows from the jobs table.
     """
-    pool = await asyncpg.create_pool(
-        user=username,
-        password=password,
-        database=dbname,
-        host="localhost"
-    )
+    pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             f"SELECT * FROM jobs ORDER BY id LIMIT $1;", num_rows
         )
         for row in rows:
             print(dict(row))
-    await pool.close()
+    
+async def view_tasks_table(num_rows: int = 10):
+    """
+    View the first `num_rows` rows from the jobs table.
+    """
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"SELECT * FROM task_queue ORDER BY id LIMIT $1;", num_rows
+        )
+        for row in rows:
+            print(dict(row))
     
 async def update_proposal_by_url(job_url: str, updates: dict):
     """
@@ -243,12 +191,7 @@ async def update_proposal_by_url(job_url: str, updates: dict):
             idx += 1
         set_clause = ", ".join(set_clauses)
         values.append(job_url)
-        pool = await asyncpg.create_pool(
-            user=username,
-            password=password,
-            database=dbname,
-            host="localhost"
-        )
+        pool = await get_pool()
         async with pool.acquire() as conn:
             await conn.execute(
                 f"""
@@ -261,28 +204,15 @@ async def update_proposal_by_url(job_url: str, updates: dict):
         return True, "Update success."
     except Exception as e:
         return False, f"Update failed - {e}"
-    finally:
-        await pool.close()
         
 async def drop_table(table_name:str):
-    pool = await asyncpg.create_pool(
-        user=username,
-        password=password,
-        database=dbname,
-        host="localhost"
-    )
+    pool = await get_pool()
     async with pool.acquire() as conn:
         await conn.execute(f"DROP TABLE IF EXISTS {_quote_ident(table_name)};")
-    await pool.close()
     
 async def check_table_schema(table_name: str):
     try:
-        pool = await asyncpg.create_pool(
-            user=username,
-            password=password,
-            database=dbname,
-            host="localhost"
-    )
+        pool = await get_pool()
         async with pool.acquire() as conn:
             # Query column names and data types
             result = await conn.fetch("""
@@ -295,9 +225,14 @@ async def check_table_schema(table_name: str):
             return True, {"status": "Schema retrieved", "schema": schema}
     except Exception as e:
         return False, {"status": f"Failed to check schema for {table_name} - {e}", "schema": []}
-    finally:
-        await pool.close()
+    
+async def main():
+    await init_pool()
+    proposal = await drop_table("task_queue")
+    await view_tasks_table()
+    await close_pool()
+    return proposal
 
 if __name__ == "__main__":
-    proposal = asyncio.run(get_job_by_url("https://www.upwork.comServiceNow SAM Architect"))
+    proposal = asyncio.run(main())
     print(proposal)

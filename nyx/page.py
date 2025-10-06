@@ -41,6 +41,8 @@ class NyxPage:
                 await self._page.wait_for_selector(wait_for, timeout=15000)
         except Exception as e:
             print(f"Warning: Could not navigate to {url}: {e}")
+        finally:
+            print(f"Finished attempting to navigate to {url}")
 
     async def click(self, selector:Optional[Union[str, ElementHandle]],wait_for:Optional[Union[str, ElementHandle]] = None, expect_navigation:bool = False):
         """Perform a click with the visual cursor"""

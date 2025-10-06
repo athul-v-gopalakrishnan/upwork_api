@@ -21,7 +21,6 @@ class NyxBrowser:
     
     async def start(self):
         """Start Chrome subprocess and connect via CDP."""
-        # Launch Chrome with remote debugging
         self.chrome_process = subprocess.Popen([
             chrome_executable_path,
             f'--user-data-dir={user_data_dir}',

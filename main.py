@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+import traceback
 import pickle
 import asyncio
 import httpx
@@ -13,6 +14,7 @@ from nyx.page import NyxPage
 
 from upwork_agent.bidder_agent import build_bidder_agent,call_proposal_generator_agent, Proposal
 from vault.db_config import MEMORYDB_CONNECTION_STRING, dbname, username, password
+from db_utils.db_pool import init_pool, close_pool
 from db_utils.access_db import add_proposal, create_proposals_table, get_proposal_by_url, create_jobs_table, get_job_by_url, add_job
 from db_utils.queue_manager import create_queue_table, enqueue_task, get_next_task
 from utils.constants import send_job_updates_webhook_url, cloudfare_challenge_div_id, home_url
@@ -65,7 +67,8 @@ async def lifespan(app: FastAPI):
     state["latest_urls"] = latest_urls
     page = await state.get("browser").new_page()
     state["page"] = page
-    print("Page pool created")
+    await init_pool()
+    print("Database pool initialized")
     # cm = PostgresSaver.from_conn_string(MEMORYDB_CONNECTION_STRING)
     # state["checkpointer"] = cm.__enter__()
     # state["checkpointer"].setup()
@@ -80,9 +83,14 @@ async def lifespan(app: FastAPI):
     print(job_table_status, msg)
     task_queue_table_status, msg = await create_queue_table()
     print(task_queue_table_status, msg)
+    worker_task = asyncio.create_task(worker_loop())
+    print("Worker loop started")
     yield
     # Shutdown code
     # cm.__exit__(None, None, None)
+    worker_task.cancel()
+    await close_pool()
+    print("Database pool closed")
     await browser.shutdown()
 
 state["last_url"] = ""
@@ -111,21 +119,26 @@ app.add_middleware(
 )
 
 @app.get("/enqueue_task")
-async def enqueue_task_api(task_type:str, payload:dict=None, priority:int=0):
+async def enqueue_task_api(task_type:str, payload = None, priority:int=0):
+    print(f"Enqueuing task: {task_type} with payload: {payload} and priority: {priority}")
     status, message = await enqueue_task(task_type=task_type, payload=payload, priority=priority)
     return {"status" : status, "message" : message}
 
 async def check_for_jobs():
-    try:
-        page = state["page"]
-        login_status, message = await login_to_upwork(page=page, username="ali-maharuf", password="@neomaharuf124!", security_question_answer="Neoito")
-        if not login_status:
-            return {"status" : "Failed", "message" : f"Login failed - {message}"}
-        upwork_url = "https://www.upwork.com"
-        session_latest_links = {}
-        new_jobs_num = 0
-        async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient() as client:
+        try:
+            page = state["page"]
+            login_status, message = await login_to_upwork(page=page, username="ali-maharuf", password="@neomaharuf124!", security_question_answer="Neoito")
+            if not login_status:
+                payload =  {"status" : "Failed", "message" : f"Login failed - {message}"}
+                print(payload)
+                await client.post(url = send_job_updates_webhook_url, json = payload)
+            upwork_url = "https://www.upwork.com"
+            session_latest_links = {}
+            new_jobs_num = 0
+            
             for category, url in state["filter_urls"].items():
+                jobs_in_link = 0
                 first_link = True
                 await page.goto(url,wait_for = 'div[data-test="UpCInput"]', captcha_selector=cloudfare_challenge_div_id,wait_until= "domcontentloaded",referer="https://www.upwork.com/")
                 job_postings = await page.get_all_elements(selector='article[data-test="JobTile"]')
@@ -169,18 +182,27 @@ async def check_for_jobs():
                         job_details["url"] = link
                         await client.post(url = send_job_updates_webhook_url, json = job_details)
                         print(f"scraping failed - {job_details}")
+                        
                     await page.go_back()
                     await asyncio.sleep(1)
-        state["latest_urls"] = session_latest_links 
-        with open(latest_urls_path, 'wb') as f:
-            print("Saving latest urls ...")
-            pickle.dump(session_latest_links, f)   
-        return {"status" : f"Successfully checked for new jobs. {new_jobs_num} jobs found."}   
-    except Exception as e:
-        return {"status" : f"Check failed. Error - {e}"}
-    finally:
-        await page.goto(home_url)
-    
+                    jobs_in_link += 1
+                    if jobs_in_link == 3:
+                        print("Max jobs reached for this link")
+                        break
+            state["latest_urls"] = session_latest_links 
+            with open(latest_urls_path, 'wb') as f:
+                print("Saving latest urls ...")
+                pickle.dump(session_latest_links, f)   
+            payload =  {"status" : "Check compelete.", "message" : f"Successfully checked for new jobs. {new_jobs_num} jobs found."}   
+            print(payload)
+            await client.post(url = send_job_updates_webhook_url, json = payload)
+            return "done", "sukses"
+        except Exception as e:
+            payload =  {"status" : "Failed", "message" : f"Check failed. Error - {e}"}
+            print(payload)
+            await client.post(url = send_job_updates_webhook_url, json = payload)
+        finally:
+            await page.goto(home_url)
 
 async def scrape_job(page:NyxPage):
     try:
@@ -301,14 +323,15 @@ async def generate_proposal_api(job_url:str):
     
 
 async def apply_for_job(job_url: str):
-    try:
-        if not state["application_underway"]:
-            state["application_underway"] = True
+    async with httpx.AsyncClient() as client:
+        try:
             job_proposal = await get_proposal_by_url(job_url=job_url)
             page = state["page"]
             login_status, message = await login_to_upwork(page=page, username="ali-maharuf", password="@neomaharuf124!", security_question_answer="Neoito")
             if not login_status:
-                return {"status" : "Failed", "message" : f"Login failed - {message}"}
+                payload =  {"status" : "Failed", "message" : f"Login failed - {message}"}
+                print(payload)
+                await client.post(url = send_job_updates_webhook_url, json = payload)
             await page.goto(job_url, wait_for = 'button[data-cy="submit-proposal-button"]', captcha_selector=cloudfare_challenge_div_id, wait_until= "domcontentloaded", referer="https://www.upwork.com")
             await asyncio.sleep(2)
             
@@ -331,14 +354,15 @@ async def apply_for_job(job_url: str):
                 await page.copy_to_clipboard(questions_and_answers[question_in_page.strip()])
                 await page.paste_from_clipboard(selector = text_area)
             input("enter to finish : ")
-        else:
-            return {"status" : "Failed", "message" : "Please wait for the current application process to finish to apply for more jobs."}
-    except Exception as e:
-        print(f"Excception occured : {e}")
-        return {"status" : "Failed", "message" : "Error occured during application - {e}"}
-    finally:
-        await page.goto(home_url)
-        state["application_underway"] = False
+            payload = {"status" : "Done", "message" : f"Application completed for job - {job_url}"}
+            print(payload)
+            await client.post(url = send_job_updates_webhook_url, json = payload)
+        except Exception as e:
+            payload = {"status" : "Failed", "message" : f"Error occured during application - {e}"}
+            print(payload)
+            await client.post(url = send_job_updates_webhook_url, json = payload)
+        finally:
+            await page.goto(home_url)
         
 def question_answer_parser(proposal:Proposal):
     q_a_dict = {}
@@ -351,18 +375,29 @@ def question_answer_parser(proposal:Proposal):
 
 async def worker_loop():
     while True:
-        task = await get_next_task()
-        if task:
-            task_type = task['task_type']
-            payload = task.get('payload', {})
-            if task_type == 'check_for_jobs':
-                await check_for_jobs()
-            elif task_type == 'apply_for_job':
-                job_url = payload.get('job_url')
-                if job_url:
-                    await apply_for_job(job_url=job_url)
-            # Add more task types as needed
-        await asyncio.sleep(3)  # Polling interval
+        try:
+            status,task = await get_next_task()
+            if status:
+                task_type = task['task_type']
+                print(f"Processing task: {task_type}")
+                for key, value in task.items():
+                    print(f"{key}: {value}")
+                if task_type == 'check_for_jobs':
+                    status, message = await check_for_jobs()
+                    print(message)
+                elif task_type == 'apply_for_job':
+                    payload_string = task.get("payload","")
+                    payload = json.loads(payload_string) if payload_string else {}
+                    job_url = payload.get("job_url", "")
+                    if job_url:
+                        await apply_for_job(job_url=job_url)
+            else:
+                print("No tasks in queue, waiting...")
+        except Exception as e:
+            print(f"Error in worker loop: {e}")
+            traceback.print_exc()
+        finally:
+            await asyncio.sleep(3)
 
 if __name__ == "__main__":
     hehe = asyncio.run(question_answer_parser("https://www.upwork.com/jobs/~021970706874169818481?link=new_job&frkscc=NYf13dCiTalJ"))
