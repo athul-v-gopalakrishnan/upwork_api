@@ -8,6 +8,7 @@ cloudfare_challenge_div_id = "#PZGgl8"
 
 home_url = "about:blank"
 upwork_url = "https://www.upwork.com"
+upwork_login_url = "https://www.upwork.com/ab/account-security/login"
 
 proposals_db_name = "proposals"
 
