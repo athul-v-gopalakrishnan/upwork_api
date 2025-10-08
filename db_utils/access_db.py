@@ -17,7 +17,7 @@ async def create_proposals_table():
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS proposals (
                     id SERIAL PRIMARY KEY,
-                    job_url TEXT NOT NULL,
+                    job_url TEXT NOT NULL UNIQUE,
                     proposal JSONB NOT NULL,
                     applied BOOLEAN NOT NULL DEFAULT FALSE,
                     approved_by TEXT
@@ -34,7 +34,7 @@ async def create_jobs_table():
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS jobs (
                     id SERIAL PRIMARY KEY,
-                    job_url TEXT NOT NULL,
+                    job_url TEXT NOT NULL UNIQUE,
                     job_description JSONB NOT NULL
                 );
             """)
@@ -118,6 +118,7 @@ async def get_proposal_by_url(job_url: str):
             return None
     except Exception as e:
         print(f"Could not retrieve proposal - {e}")
+        return None
         
 async def get_job_by_url(job_url: str):
     """

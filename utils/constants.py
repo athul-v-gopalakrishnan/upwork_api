@@ -7,6 +7,7 @@ user_data_dir = "/home/neo-new/playwright-profiles/cloned-profile"
 cloudfare_challenge_div_id = "#PZGgl8"
 
 home_url = "about:blank"
+upwork_url = "https://www.upwork.com"
 
 proposals_db_name = "proposals"
 

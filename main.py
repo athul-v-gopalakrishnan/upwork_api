@@ -17,7 +17,8 @@ from vault.db_config import MEMORYDB_CONNECTION_STRING, dbname, username, passwo
 from db_utils.db_pool import init_pool, close_pool
 from db_utils.access_db import add_proposal, create_proposals_table, get_proposal_by_url, create_jobs_table, get_job_by_url, add_job
 from db_utils.queue_manager import create_queue_table, enqueue_task, get_next_task
-from utils.constants import send_job_updates_webhook_url, cloudfare_challenge_div_id, home_url
+from utils.constants import send_job_updates_webhook_url, cloudfare_challenge_div_id, home_url, send_job_updates_webhook_url, upwork_url
+from utils.job_filter import JobFilter
 
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.checkpoint.memory import MemorySaver
@@ -40,7 +41,8 @@ else:
         "Low code/No code" : None,
         "Non Tech" : None,
         "Data Engineering" : None,
-        "Business Intelligence" : None
+        "Business Intelligence" : None,
+        "Best Match" : None
     }
 
 @asynccontextmanager
@@ -51,18 +53,18 @@ async def lifespan(app: FastAPI):
     state['browser'] = browser
     print("Browser started")
     state["filter_urls"] = {
-        "Frontend" : "https://www.upwork.com/nx/search/jobs/?amount=5000-&contractor_tier=3&duration_v3=month,semester,ongoing&hourly_rate=15-&location=Americas,Europe,Oceania&q=angular%20OR%20React%20OR%20Javascript%20OR%20Typescript&sort=recency&t=0,1",
-        "Backend" : "https://www.upwork.com/nx/search/jobs/?amount=5000-&contractor_tier=2,3&duration_v3=month,semester,ongoing&hourly_rate=15-&location=Americas,Europe,Oceania&q=NodeJS%20OR%20Golang%20OR%20Python%20OR%20Database%20OR%20MongoDB%20OR%20SQL%20OR%20postgresql%20OR%20API%20Integration&sort=recency&t=0,1",
-        "Fullstack" : "https://www.upwork.com/nx/search/jobs/?amount=5000-&contractor_tier=3&duration_v3=month,semester,ongoing&hourly_rate=15-&location=Americas,Europe,Oceania&per_page=50&q=MEAN%20OR%20MERN%20OR%20Fullstack%20OR%20MongoDB&sort=recency&t=0,1",
-        "Mobile" : "https://www.upwork.com/nx/search/jobs/?amount=5000-&contractor_tier=3&duration_v3=month,semester,ongoing&hourly_rate=15-&location=Americas,Europe,Oceania&per_page=50&q=%22React%20Native%22%20OR%20Flutter%20OR%20PWA%20OR%20%22%20Progressive%20Web%20App%22&sort=recency&t=0,1",
-        "AI/ML" : "https://www.upwork.com/nx/search/jobs/?amount=2000-&contractor_tier=2,3&duration_v3=month,semester,ongoing&hourly_rate=15-&payment_verified=1&q=natural%20language%20processing%20or%20nlp%20or%20tensorflow%20or%20opencv%20or%20mlops%20or%20ml%20or%20machine%20learning%20or%20chatbot&sort=recency&t=0,1",
-        "GenAI" : "https://www.upwork.com/nx/search/jobs/?amount=2000-&contractor_tier=2,3&duration_v3=month,semester,ongoing&hourly_rate=15-&payment_verified=1&q=artificial%20intelligence%20or%20ai%20agent%20or%20ai%20or%20agenti%20ai%20or%20rag%20or%20llm%20or%20large%20language%20model%20or%20data%20science%20or%20open%20ai&sort=recency&t=0,1",
-        "Devops" : "https://www.upwork.com/nx/search/jobs/?amount=5000-&contractor_tier=3&duration_v3=month,semester,ongoing&hourly_rate=15-&location=Americas,Europe,Oceania&per_page=50&q=Docker%20OR%20Pineline%20OR%20CI%2FCD%20OR%20AWS%20OR%20GCP%20OR%20Azure%20OR%20Monitoring%20OR%20Prometheus%20OR%20Grafana%20OR%20Kubernetes&sort=recency&t=0,1",
-        "IOT" : "https://www.upwork.com/nx/search/jobs/?amount=5000-&contractor_tier=3&duration_v3=month,semester,ongoing&hourly_rate=15-&location=Americas,Europe,Oceania&per_page=50&q=IoT%20OR%20Internet%20of%20Things&sort=recency&t=0,1",
-        "Low code/No code" : "https://www.upwork.com/nx/search/jobs/?amount=5000-&contractor_tier=2,3&duration_v3=month,semester,ongoing&hourly_rate=15-&location=Americas,Europe,Oceania&per_page=50&q=Bubble%20OR%20Webflow&sort=recency&t=0,1",
-        "Non Tech" : "https://www.upwork.com/nx/search/jobs/?amount=5000-&contractor_tier=2,3&duration_v3=month,semester,ongoing&hourly_rate=15-&location=Americas,Europe,Oceania&per_page=50&q=web%20OR%20development%20OR%20software%20OR%20Mobile%20OR%20MVP%20OR%20SAAS%20OR%20Startup%20OR%20AI&sort=recency&t=0,1",
-        "Data Engineering" : "https://www.upwork.com/nx/search/jobs/?amount=2000-&contractor_tier=2,3&duration_v3=month,semester,ongoing&hourly_rate=15-&payment_verified=1&q=power%20bi%20or%20data%20engineering%20or%20snowflake%20or%20dashboard&sort=recency&t=0,1",
-        "Business Intelligence" : "https://www.upwork.com/nx/search/jobs/?amount=2000-&contractor_tier=2,3&duration_v3=month,semester,ongoing&hourly_rate=15-&payment_verified=1&q=data%20analysis%20or%20data%20analyst%20or%20quicksight%20or%20etl%20or%20elt%20or%20dax%20or%20data%20lakehouse%20or%20sql%20or%20bi%20or%20ai%20byte%20or%20business%20intelligence&sort=recency&t=0,1"
+        "Frontend" : "https://www.upwork.com/nx/search/jobs/?amount=5000-&contractor_tier=3&duration_v3=week,month,semester,ongoing&hourly_rate=15-&location=Americas,Europe,Oceania&q=angular%20OR%20React%20OR%20Javascript%20OR%20Typescript&sort=recency&t=0,1",
+        "Backend" : "https://www.upwork.com/nx/search/jobs/?amount=5000-&contractor_tier=2,3&duration_v3=week,month,semester,ongoing&hourly_rate=15-&location=Americas,Europe,Oceania&q=NodeJS%20OR%20Golang%20OR%20Python%20OR%20Database%20OR%20MongoDB%20OR%20SQL%20OR%20postgresql%20OR%20API%20Integration&sort=recency&t=0,1",
+        "Fullstack" : "https://www.upwork.com/nx/search/jobs/?amount=5000-&contractor_tier=3&duration_v3=week,month,semester,ongoing&hourly_rate=15-&location=Americas,Europe,Oceania&per_page=50&q=MEAN%20OR%20MERN%20OR%20Fullstack%20OR%20MongoDB&sort=recency&t=0,1",
+        "Mobile" : "https://www.upwork.com/nx/search/jobs/?amount=5000-&contractor_tier=3&duration_v3=week,month,semester,ongoing&hourly_rate=15-&location=Americas,Europe,Oceania&per_page=50&q=%22React%20Native%22%20OR%20Flutter%20OR%20PWA%20OR%20%22%20Progressive%20Web%20App%22&sort=recency&t=0,1",
+        "AI/ML" : "https://www.upwork.com/nx/search/jobs/?amount=2000-&contractor_tier=2,3&duration_v3=week,month,semester,ongoing&hourly_rate=15-&payment_verified=1&q=natural%20language%20processing%20or%20nlp%20or%20tensorflow%20or%20opencv%20or%20mlops%20or%20ml%20or%20machine%20learning%20or%20chatbot&sort=recency&t=0,1",
+        "GenAI" : "https://www.upwork.com/nx/search/jobs/?amount=2000-&contractor_tier=2,3&duration_v3=week,month,semester,ongoing&hourly_rate=15-&payment_verified=1&q=artificial%20intelligence%20or%20ai%20agent%20or%20ai%20or%20agenti%20ai%20or%20rag%20or%20llm%20or%20large%20language%20model%20or%20data%20science%20or%20open%20ai&sort=recency&t=0,1",
+        "Devops" : "https://www.upwork.com/nx/search/jobs/?amount=5000-&contractor_tier=3&duration_v3=week,month,semester,ongoing&hourly_rate=15-&location=Americas,Europe,Oceania&per_page=50&q=Docker%20OR%20Pineline%20OR%20CI%2FCD%20OR%20AWS%20OR%20GCP%20OR%20Azure%20OR%20Monitoring%20OR%20Prometheus%20OR%20Grafana%20OR%20Kubernetes&sort=recency&t=0,1",
+        "IOT" : "https://www.upwork.com/nx/search/jobs/?amount=5000-&contractor_tier=3&duration_v3=week,month,semester,ongoing&hourly_rate=15-&location=Americas,Europe,Oceania&per_page=50&q=IoT%20OR%20Internet%20of%20Things&sort=recency&t=0,1",
+        "Low code/No code" : "https://www.upwork.com/nx/search/jobs/?amount=5000-&contractor_tier=2,3&duration_v3=week,month,semester,ongoing&hourly_rate=15-&location=Americas,Europe,Oceania&per_page=50&q=Bubble%20OR%20Webflow&sort=recency&t=0,1",
+        "Non Tech" : "https://www.upwork.com/nx/search/jobs/?amount=5000-&contractor_tier=2,3&duration_v3=week,month,semester,ongoing&hourly_rate=15-&location=Americas,Europe,Oceania&per_page=50&q=web%20OR%20development%20OR%20software%20OR%20Mobile%20OR%20MVP%20OR%20SAAS%20OR%20Startup%20OR%20AI&sort=recency&t=0,1",
+        "Data Engineering" : "https://www.upwork.com/nx/search/jobs/?amount=2000-&contractor_tier=2,3&duration_v3=week,month,semester,ongoing&hourly_rate=15-&payment_verified=1&q=power%20bi%20or%20data%20engineering%20or%20snowflake%20or%20dashboard&sort=recency&t=0,1",
+        "Business Intelligence" : "https://www.upwork.com/nx/search/jobs/?amount=2000-&contractor_tier=2,3&duration_v3=week,month,semester,ongoing&hourly_rate=15-&payment_verified=1&q=data%20analysis%20or%20data%20analyst%20or%20quicksight%20or%20etl%20or%20elt%20or%20dax%20or%20data%20lakehouse%20or%20sql%20or%20bi%20or%20ai%20byte%20or%20business%20intelligence&sort=recency&t=0,1"
     }
     state["latest_urls"] = latest_urls
     page = await state.get("browser").new_page()
@@ -128,21 +130,25 @@ async def check_for_jobs():
     async with httpx.AsyncClient() as client:
         try:
             page = state["page"]
-            login_status, message = await login_to_upwork(page=page, username="ali-maharuf", password="@neomaharuf124!", security_question_answer="Neoito")
+            login_status, message, num_jobs_scraped = await login_to_upwork(page=page, username="ali-maharuf", password="@neomaharuf124!", scrape_best=True, security_question_answer="Neoito")
             if not login_status:
                 payload =  {"status" : "Failed", "message" : f"Login failed - {message}"}
                 print(payload)
                 await client.post(url = send_job_updates_webhook_url, json = payload)
-            upwork_url = "https://www.upwork.com"
             session_latest_links = {}
-            new_jobs_num = 0
+            new_jobs_num = num_jobs_scraped or 0
+            
+            job_filter = JobFilter()
             
             for category, url in state["filter_urls"].items():
-                jobs_in_link = 0
                 first_link = True
                 await page.goto(url,wait_for = 'div[data-test="UpCInput"]', captcha_selector=cloudfare_challenge_div_id,wait_until= "domcontentloaded",referer="https://www.upwork.com/")
                 job_postings = await page.get_all_elements(selector='article[data-test="JobTile"]')
                 for job_posting in job_postings:
+                    job_posted_time_elements = await job_posting.query_selector_all('small[data-test="job-pubilshed-date"] span')
+                    job_posted_time = ""
+                    for element in job_posted_time_elements:
+                        job_posted_time += await page.get_text_content(element) + " "
                     link_div = await job_posting.query_selector('a[data-test="job-tile-title-link UpLink"]')
                     link = await link_div.get_attribute('href')
                     if not link:
@@ -155,16 +161,30 @@ async def check_for_jobs():
                     if first_link:
                         session_latest_links[category] = link
                         first_link = False
-                    if link == state["latest_urls"].get(category,None):
+                    job_posted_time = job_posted_time.lower().split(sep=" ")
+                    if link == state["latest_urls"].get(category,None) or \
+                        ("minutes" not in job_posted_time and "minute" not in job_posted_time) or \
+                            ("seconds" not in job_posted_time and "second" not in job_posted_time):
                         print(f"last_link in {category}")
                         break
                     await page.click(link_div, wait_for='li[data-qa="client-location"] strong')
                     
                     status, job_details = await scrape_job(page=page)
+                    print("checking job validity ...")
+                    if not job_filter.is_job_allowed(job_details):
+                        print("job not allowed by filter ...")
+                        await page.go_back()
+                        await asyncio.sleep(1)
+                        continue
                     if status:
                         """Update db"""
                         job_update_status, msg = await add_job(job_url=link,job_description=job_details)
-                        if not job_update_status:
+                        if not job_update_status and "duplicate key" in msg.get("message","").lower():
+                            print(f"Job already exists in db - {link}")
+                            await page.go_back()
+                            await asyncio.sleep(1)
+                            continue
+                        elif not job_update_status:
                             await client.post(url = send_job_updates_webhook_url, json = msg)
                             print(f"db update error - {msg}")
                             return
@@ -185,10 +205,7 @@ async def check_for_jobs():
                         
                     await page.go_back()
                     await asyncio.sleep(1)
-                    jobs_in_link += 1
-                    if jobs_in_link == 3:
-                        print("Max jobs reached for this link")
-                        break
+                    
             state["latest_urls"] = session_latest_links 
             with open(latest_urls_path, 'wb') as f:
                 print("Saving latest urls ...")
@@ -196,11 +213,13 @@ async def check_for_jobs():
             payload =  {"status" : "Check compelete.", "message" : f"Successfully checked for new jobs. {new_jobs_num} jobs found."}   
             print(payload)
             await client.post(url = send_job_updates_webhook_url, json = payload)
-            return "done", "sukses"
+            return "done", "success"
         except Exception as e:
             payload =  {"status" : "Failed", "message" : f"Check failed. Error - {e}"}
             print(payload)
+            traceback.print_exc()
             await client.post(url = send_job_updates_webhook_url, json = payload)
+            return "failed", str(e)
         finally:
             await page.goto(home_url)
 
@@ -219,11 +238,15 @@ async def scrape_job(page:NyxPage):
         hire_rate = await page.get_text_content('li[data-qa="client-job-posting-stats"] div')
         job_details["hire_rate"] = hire_rate.strip() if hire_rate else "N/A"
         
-        total_spent = await page.get_text_content('li strong[data-qa="client-spend"] span')
+        total_spent = await page.get_text_content('li strong[data-qa="client-spend"] span span')
         job_details["total_spent"] = total_spent.strip() if total_spent else "N/A"
         
         member_since = await page.get_text_content('li[data-qa="client-contract-date"] small')
         job_details["member_since"] = member_since.strip() if member_since else "N/A"
+        
+        payment_verified = await page.check_for_element('div.payment-verified')
+        print(f"Payment verified: {payment_verified}")
+        job_details["payment_verified"] = payment_verified
         
         summary_element = await page.get_all_elements('div[data-test="Description"] p')
         summary = ""
@@ -232,13 +255,16 @@ async def scrape_job(page:NyxPage):
             summary += summary_chunk.strip() + " "
         job_details["summary"] = summary.strip()
         
-        duration_elements = await page.get_all_elements('div[data-cy*="duration"] + strong span')
+        duration_type_elements = await page.get_all_elements('div[data-cy*="duration"]')
+        duration_elements = await page.get_all_elements('div[data-cy*="duration"] + strong > span')
+        duration_type = await duration_type_elements[0].get_attribute('data-cy') if duration_type_elements else None
         duration = await page.get_text_content(duration_elements[0]) if duration_elements else "N/A"
+        job_details["duration_type"] = duration_type.strip() if duration_type else "N/A"
         job_details["duration"] = duration.strip()
         
-        price_div = await page.get_element('div[data-cy="fixed_price"] + div strong')
+        price_div = await page.get_element('div[data-cy="fixed-price"] + div strong')
         if price_div:
-            price = await page.get_text_content(price_div).strip()
+            price = await page.get_text_content(price_div)
             job_details["hourly_rate"] = price.strip() if price else "N/A"
             job_details["job_type"] = "Fixed Price"
         else:        
@@ -258,6 +284,17 @@ async def scrape_job(page:NyxPage):
             skills.append(skill.strip() + "\n")
         job_details["skills"] = ", ".join(skills)
         
+        qualified = True
+        if await page.check_for_element('ul.qualification-items'):
+            qualification_elements = await page.get_all_elements('ul.qualification-items span.icons div')
+            for element in qualification_elements:
+                qualification_status = await page.get_attribute(element, 'title')
+                if qualification_status == "You do not meet this qualification":
+                    qualified = False
+                    break
+                
+        job_details["qualified"] = qualified
+        
         if await page.check_for_element('section[data-test="Questions"]'):
             question_number = 1
             questions = []
@@ -274,32 +311,96 @@ async def scrape_job(page:NyxPage):
         return True, job_details
     except Exception as e:
         print(e)
+        traceback.print_exc()
         await page.goto(home_url)
         return False, {"status": "Failed", "message": str(e)}
 
         
-async def login_to_upwork(page:NyxPage, username: str, password: str, security_question_answer: str = None, remember_me: bool = True):
-    try: 
-        await page.goto("https://www.upwork.com/ab/account-security/login",captcha_selector=cloudfare_challenge_div_id,wait_until= "domcontentloaded",referer="https://www.upwork.com") 
-        login_page = await page.check_for_element("#login_username")
-        await asyncio.sleep(2)
-        if login_page:
-            await page.fill_field_and_enter('#login_username', username)
-            await asyncio.sleep(3)
-            if remember_me:
-                await page.click('#login_rememberme')
-            await page.fill_field_and_enter('#login_password', password)
-            await asyncio.sleep(3)
-            await page.fill_field_and_enter('#login_answer', security_question_answer)
-        elif await page.check_for_element('section[data-test="freelancer-sidebar-profile"]'):
-            return True, "Already logged in." 
-        else:
-            return False, "Login page could not be found."
-    except Exception as e:
-        print(f"Error during login: {e}")
-        return False, f"Login attempt failed - {e}"
-    finally:
-        await page.goto(home_url)
+async def login_to_upwork(page:NyxPage,username: str, password: str, scrape_best:bool = False, security_question_answer: str = None, remember_me: bool = True):
+    async with httpx.AsyncClient() as client:
+        try: 
+            await page.goto("https://www.upwork.com/ab/account-security/login",captcha_selector=cloudfare_challenge_div_id,wait_until= "domcontentloaded",referer="https://www.upwork.com") 
+            login_page = await page.check_for_element("#login_username")
+            await asyncio.sleep(2)
+            if login_page:
+                await page.fill_field_and_enter('#login_username', username)
+                await asyncio.sleep(3)
+                if remember_me:
+                    await page.click('#login_rememberme')
+                await page.fill_field_and_enter('#login_password', password)
+                await asyncio.sleep(3)
+                await page.fill_field_and_enter('#login_answer', security_question_answer)
+            elif await page.check_for_element('section[data-test="freelancer-sidebar-profile"]'):
+                if scrape_best:
+                    first_link = True
+                    new_jobs_num = 0
+                    best_match_button = await page.get_element('button[data-test="tab-best-matches"]')
+                    if best_match_button:
+                        await page.click(best_match_button)
+                        await asyncio.sleep(1)
+                        job_tiles = await page.get_all_elements('section[data-ev-sublocation="job_feed_tile"]')
+                        for job_posting in job_tiles:
+                            job_posted_time_element = await job_posting.query_selector('span[data-test="posted-on"]')
+                            job_posted_time = await page.get_text_content(job_posted_time_element) if job_posted_time_element else "N/A"
+                            print(f"Job posted time: {job_posted_time}")
+                            link_div = await job_posting.query_selector('a[data-ev-label="link"]')
+                            link = await link_div.get_attribute('href')
+                            if not link:
+                                payload = {"status": "Failed", "message":"Problem extracting link ... \nMaybe the website structure has changed"}
+                                print(payload)
+                                await client.post(url = send_job_updates_webhook_url, json = payload)
+                                print("link_extraction_failed")
+                                return 
+                            link = upwork_url + link
+                            if first_link:
+                                latest_best_link = link
+                                first_link = False
+                            if link == state["latest_urls"].get("Best Match",None) or \
+                                ("minutes" not in job_posted_time.lower().split(sep=" ") and "minute" not in job_posted_time.lower().split(sep=" ")):
+                                print(f"last_link in Best Match")
+                                break
+                            await page.click(link_div, wait_for='li[data-qa="client-location"] strong')
+                            
+                            status, job_details = await scrape_job(page=page)
+                            
+                            if status:
+                                """Update db"""
+                                job_update_status, msg = await add_job(job_url=link,job_description=job_details)
+                                if not job_update_status and "duplicate key" in msg.get("message","").lower():
+                                    print(f"Job already exists in db - {link}")
+                                    await page.go_back()
+                                    await asyncio.sleep(1)
+                                    continue
+                                elif not job_update_status:
+                                    await client.post(url = send_job_updates_webhook_url, json = msg)
+                                    print(f"db update error - {msg}")
+                                    return
+                                else:
+                                    payload = {
+                                        "status" : "Done",
+                                        "category" : "Best Match",
+                                        "url" : link,
+                                        "job_details" : job_details
+                                    }
+                                    await client.post(url = send_job_updates_webhook_url, json = payload)
+                                    new_jobs_num += 1
+                                    print(f"job {new_jobs_num} sent.")
+                            else:
+                                job_details["url"] = link
+                                await client.post(url = send_job_updates_webhook_url, json = job_details)
+                                print(f"scraping failed - {job_details}")
+                                
+                            await page.go_back()
+                            await asyncio.sleep(1)
+                    state["latest_urls"]["Best Match"] = latest_best_link
+                return True, "Already logged in.", new_jobs_num or None
+            else:
+                return False, "Login page could not be found."
+        except Exception as e:
+            print(f"Error during login: {e}")
+            return False, f"Login attempt failed - {e}"
+        finally:
+            await page.goto(home_url)
 
 @app.post("/generate_proposal")
 async def generate_proposal_api(job_url:str):
@@ -325,8 +426,13 @@ async def generate_proposal_api(job_url:str):
 async def apply_for_job(job_url: str):
     async with httpx.AsyncClient() as client:
         try:
-            job_proposal = await get_proposal_by_url(job_url=job_url)
             page = state["page"]
+            job_proposal = await get_proposal_by_url(job_url=job_url)
+            if not job_proposal:
+                payload = {"status" : "Failed", "message" : "No proposal found for this job in database."}
+                print(payload)
+                await client.post(url = send_job_updates_webhook_url, json = payload)
+                return
             login_status, message = await login_to_upwork(page=page, username="ali-maharuf", password="@neomaharuf124!", security_question_answer="Neoito")
             if not login_status:
                 payload =  {"status" : "Failed", "message" : f"Login failed - {message}"}
@@ -354,7 +460,7 @@ async def apply_for_job(job_url: str):
                 await page.copy_to_clipboard(questions_and_answers[question_in_page.strip()])
                 await page.paste_from_clipboard(selector = text_area)
             input("enter to finish : ")
-            payload = {"status" : "Done", "message" : f"Application completed for job - {job_url}"}
+            payload = {"status" : "Success", "message" : f"Application completed for job - {job_url}"}
             print(payload)
             await client.post(url = send_job_updates_webhook_url, json = payload)
         except Exception as e:

@@ -1,6 +1,7 @@
 import random
 import asyncio
 from typing import Union, Optional, List
+import traceback
 
 from playwright.async_api import Page, ElementHandle
 from playwright.async_api import TimeoutError
@@ -141,6 +142,7 @@ class NyxPage:
                 return None
         except Exception as e:
             print(f"Warning: Could not get text content: {e}")
+            traceback.print_exc()
             return None
         
     async def get_attribute(self, selector:Union[str, ElementHandle], attribute_name:str) -> Optional[str]:
