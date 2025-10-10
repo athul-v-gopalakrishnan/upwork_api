@@ -25,3 +25,9 @@ class State(TypedDict):
     proposal:Optional[Proposal]
     project_details:Optional[str]
     retrieved_projects:Optional[str]
+    
+class FinalJobPayload(BaseModel):
+    status:str = Field(...)
+    category:str = Field(...)
+    url:str = Field(...)
+    job_details:dict = Field(...)

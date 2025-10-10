@@ -18,6 +18,7 @@ async def create_proposals_table():
                 CREATE TABLE IF NOT EXISTS proposals (
                     id SERIAL PRIMARY KEY,
                     job_url TEXT NOT NULL UNIQUE,
+                    job_type TEXT,
                     proposal JSONB NOT NULL,
                     applied BOOLEAN NOT NULL DEFAULT FALSE,
                     approved_by TEXT
@@ -229,8 +230,8 @@ async def check_table_schema(table_name: str):
     
 async def main():
     await init_pool()
-    proposal = await drop_table("task_queue")
-    await view_tasks_table()
+    proposal = await create_proposals_table()
+    await view_proposals_table()
     await close_pool()
     return proposal
 
