@@ -27,7 +27,7 @@ class ScraperSession(Session):
         super().__init__(page = page, username = username, password=password, security_answer=security_answer, status_endpoint=status_endpoint, payload_endpoint=status_endpoint, payload=FinalJobPayload())
         self.links_to_visit = links_to_visit
         self.job_counter = JobCounter()
-        self.latest_links = last_links
+        self._links = last_links
         self.session_latest_links = {}
         self.job_details = {}
         self.job_filter = job_filter

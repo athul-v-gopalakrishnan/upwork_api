@@ -28,7 +28,7 @@ LOGIN_PASSWORD = os.getenv("UPWORK_PASSWORD")
 SECURITY_QUESTION_ANSWER = os.getenv("UPWORK_SECURITY_QUESTION_ANSWER")
 
 state = {}
-latest_urls_path = 'latest_urls.pkl'
+latest_urls_path = 'latest_links.pkl'
 if os.path.exists(latest_urls_path):
     with open(latest_urls_path, 'rb') as f:
         latest_urls = pickle.load(f)
