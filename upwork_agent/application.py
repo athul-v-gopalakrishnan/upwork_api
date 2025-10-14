@@ -1,5 +1,5 @@
 from utils.session import Session
-from utils.constants import upwork_login_url, cloudfare_challenge_div_id, upwork_url, home_url
+from utils.constants import upwork_login_url, cloudfare_challenge_div_id, upwork_url, home_url, send_job_updates_webhook_url, send_job_updates_webhook_url_test
 from utils.models import Proposal
 
 from db_utils.access_db import get_proposal_by_url, update_proposal_by_url
@@ -18,7 +18,7 @@ class ApplicationSession(Session):
                  password:str,
                  human:str,
                  security_answer:str = None, 
-                 status_endpoint:str = None,
+                 status_endpoint:str = send_job_updates_webhook_url,
                  ):
         super().__init__(page, username, password, security_answer, status_endpoint)
         self.job_url = job_url
@@ -28,35 +28,51 @@ class ApplicationSession(Session):
         self.proposal_type:Optional[Literal["Hourly", "Fixed Price"]] = None
         
     async def run(self):
-        proposal_fetch_status = await self.get_proposal()
-        if not proposal_fetch_status:
+        try:
+            client_setup_success = await self.setup_client()
+            if not client_setup_success:
+                return False
+        except Exception as e:
+            print(f"Error setting up client: {e}")
+        try:
+            client_setup_success = await self.setup_client()
+            if not client_setup_success:
+                return False
+            proposal_fetch_status = await self.get_proposal()
+            if not proposal_fetch_status:
+                await self.send_status()
+                self.print_status()
+                return False
+            login_status = await self.login(upwork_login_url)
+            if not login_status:
+                await self.send_status()
+                self.print_status()
+                return False
+            reach_bidding_page_status = await self.reach_bidding_page()
+            if not reach_bidding_page_status:
+                await self.send_status()
+                self.print_status()
+                return False
+            apply_status = await self.apply_for_job()
+            if not apply_status:
+                await self.send_status()
+                self.print_status()
+                return False
+            update_proposal_status = await self.update_proposal_status()
+            if not update_proposal_status:
+                await self.send_status()
+                self.print_status()
+                return False
+            self.update_status("Success", "Application process completed successfully")
             await self.send_status()
             self.print_status()
+            await self.close_client()
+            await self.page.goto(home_url)
+            return True
+        except Exception as e:
+            await self.close_client()
+            await self.page.goto(home_url)
             return False
-        login_status = await self.login(upwork_login_url)
-        if not login_status:
-            await self.send_status()
-            self.print_status()
-            return False
-        reach_bidding_page_status = await self.reach_bidding_page()
-        if not reach_bidding_page_status:
-            await self.send_status()
-            self.print_status()
-            return False
-        apply_status = await self.apply_for_job()
-        if not apply_status:
-            await self.send_status()
-            self.print_status()
-            return False
-        update_proposal_status = await self.update_proposal_status()
-        if not update_proposal_status:
-            await self.send_status()
-            self.print_status()
-            return False
-        self.update_status("Success", "Application process completed successfully")
-        await self.send_status()
-        self.print_status()
-        return True
         
     async def reach_bidding_page(self):
         try:
@@ -72,10 +88,11 @@ class ApplicationSession(Session):
     
     async def get_proposal(self):
         try:
-            existing_proposal = await get_proposal_by_url(self.job_url)
+            existing_proposal, job_type = await get_proposal_by_url(self.job_url)
             self.proposal = existing_proposal
             if existing_proposal:
-                self.proposal_type = existing_proposal.get("job_type")
+                self.proposal_type = job_type
+                print(self.proposal_type)
             else:
                 self.update_status("Failed", "No existing proposal found for the job URL")
                 await self.send_status()

@@ -27,7 +27,7 @@ class State(TypedDict):
     retrieved_projects:Optional[str]
     
 class FinalJobPayload(BaseModel):
-    status:str = Field(...)
-    category:str = Field(...)
-    url:str = Field(...)
-    job_details:dict = Field(...)
+    status: str = Field("", description="status")
+    category: str = Field("", description="category")
+    url: str = Field("", description="job url")
+    job_details: dict = Field(default_factory=dict, description="job details")

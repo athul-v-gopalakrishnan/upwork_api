@@ -1,6 +1,6 @@
 from utils.job_counter import JobCounter
 from utils.constants import send_job_updates_webhook_url,upwork_url, home_url\
-    , cloudfare_challenge_div_id
+    , cloudfare_challenge_div_id, send_job_updates_webhook_url_test
 from utils.session import Session
 from utils.models import FinalJobPayload
 from utils.job_filter import JobFilter
@@ -11,6 +11,7 @@ from nyx.page import NyxPage
 
 import asyncio
 import traceback
+import pickle
 
 class ScraperSession(Session):
     def __init__(
@@ -23,32 +24,56 @@ class ScraperSession(Session):
             status_endpoint:str = send_job_updates_webhook_url,
             job_filter = JobFilter()
         ):
-        super().__init__(page, username, password, security_answer, status_endpoint,payload_endpoint=status_endpoint)
+        super().__init__(page = page, username = username, password=password, security_answer=security_answer, status_endpoint=status_endpoint, payload_endpoint=status_endpoint, payload=FinalJobPayload())
         self.links_to_visit = links_to_visit
         self.job_counter = JobCounter()
         self.latest_links = last_links
         self.session_latest_links = {}
         self.job_details = {}
-        self.final_payload = FinalJobPayload()
         self.job_filter = job_filter
         
     async def run(self):
-        client_setup_success = await self.setup_client()
-        if not client_setup_success:
-            return False
-        login_success = await self.login(to_scrape=True)
-        if not login_success:
-            return False
-        login_page_scraper_success = await self.scrape_login_page()
-        if not login_page_scraper_success:
-            return False
-        for category, url in self.links_to_visit.items():
-            job_page_visit_status = await self.visit_job_page(url)
-            if not job_page_visit_status:
-                continue
-            job_page_scrape_status = await self.scrape_listed_jobs(category)
-            if not job_page_scrape_status:
+        try:
+            client_setup_success = await self.setup_client()
+            if not client_setup_success:
                 return False
+        except Exception as e:
+            print(f"Error setting up client: {e}")
+        try:
+            login_success = await self.login(to_scrape=True)
+            if not login_success:
+                return False
+            login_page_scraper_success = await self.scrape_login_page()
+            if not login_page_scraper_success:
+                return False
+            for category, url in self.links_to_visit.items():
+                print(f"Visiting category: {category} - {url}")
+                job_page_visit_status = await self.visit_job_page(url)
+                if not job_page_visit_status:
+                    continue
+                job_page_scrape_status = await self.scrape_listed_jobs(category)
+                if not job_page_scrape_status:
+                    return False
+                await asyncio.sleep(2)
+            self.update_status("Done", f"Scraping session completed. {self.job_counter.get_count()} new jobs found.")
+            await self.send_status()
+            self.print_status()
+            await self.close_client()
+            await self.page.goto(home_url)
+            return True
+        except Exception as e:
+            print(e)
+            traceback.print_exc()
+            self.update_status("Failed", f"Error in scraping session: {e}")
+            await self.send_status()
+            self.print_status()
+            await self.close_client()
+            await self.page.goto(home_url)
+            return False
+        finally:
+            with open("latest_links.pkl", "wb") as f:
+                pickle.dump(self.get_latest_links(), f)
+                
                 
     async def scrape_job_page(self):
         try:
@@ -159,10 +184,17 @@ class ScraperSession(Session):
         first_link = True
         job_postings = await self.page.get_all_elements(selector='article[data-test="JobTile"]')
         for job_posting in job_postings:
-            job_posted_time_elements = await job_posting.query_selector_all('small[data-test="job-pubilshed-date"] span')
+            try:
+                job_posted_time_elements = await job_posting.query_selector_all('small[data-test="job-pubilshed-date"] span')
+            except Exception as e:
+                print(f"Error getting job posted time elements: {e}")
+                input("Press Enter to  continue...")
+                continue
             job_posted_time = ""
             for element in job_posted_time_elements:
                 job_posted_time += await self.page.get_text_content(element) + " "
+            job_posted_time = job_posted_time.strip()
+            print(f"Job posted time: {job_posted_time}")
             link_div = await job_posting.query_selector('a[data-test="job-tile-title-link UpLink"]')
             link = await link_div.get_attribute('href')
             if not link:
@@ -174,9 +206,9 @@ class ScraperSession(Session):
             if first_link:
                 self.session_latest_links[category] = link
                 first_link = False
-            if link == self.latest_links.get(category,None) or \
-                    ("minutes" not in job_posted_time and "minute" not in job_posted_time) or \
-                        ("seconds" not in job_posted_time and "second" not in job_posted_time):
+                
+            is_recent_link = any(x in job_posted_time.lower() for x in ("minute", "minutes", "second", "seconds"))
+            if link == self.latest_links.get(category,None) or not is_recent_link:
                 print(f"last_link in {category}")
                 break
             await self.page.click(link_div, wait_for='li[data-qa="client-location"] strong')
@@ -185,8 +217,9 @@ class ScraperSession(Session):
             post_processing_success = await self.post_scraping_tasks(scrape_success, link, category)
             if not post_processing_success:
                 return False
+            await asyncio.sleep(2)
             await self.page.go_back()
-            await asyncio.sleep(1)
+            await asyncio.sleep(2)
         return True
     
     async def post_scraping_tasks(self, scrape_success:bool, link:str, category:str):
@@ -196,13 +229,10 @@ class ScraperSession(Session):
             return False
         if not self.job_filter.is_job_allowed(self.job_details):
             print("Job filtered out based on criteria.")
-            await self.page.go_back()
             return True
         job_update_status, msg = await add_job(job_url=link,job_description=self.job_details)
         if not job_update_status and "duplicate key" in msg.get("message","").lower():
             print(f"Job already exists in db - {link}")
-            await self.page.go_back()
-            await asyncio.sleep(1)
             return True
         elif not job_update_status:
             self.update_status("Failed", f"Database update error - {msg}")
@@ -210,10 +240,10 @@ class ScraperSession(Session):
             self.print_status()
             return False
         else:
-            self.final_payload.status = "Done"
-            self.final_payload.category = category
-            self.final_payload.url = link
-            self.final_payload.job_details = self.job_details
+            self.payload.status = "Done"
+            self.payload.category = category
+            self.payload.url = link
+            self.payload.job_details = self.job_details
             
             sent_status = await self.send_payload()
             if not sent_status:
@@ -235,7 +265,7 @@ class ScraperSession(Session):
             for job_posting in job_tiles:
                 job_posted_time_element = await job_posting.query_selector('span[data-test="posted-on"]')
                 job_posted_time = await self.page.get_text_content(job_posted_time_element) if job_posted_time_element else "N/A"
-                print(f"Job posted time: {job_posted_time}")
+                print(f"Job posted time: {job_posted_time.strip()}")
                 link_div = await job_posting.query_selector('a[data-ev-label="link"]')
                 link = await link_div.get_attribute('href')
                 if not link:
@@ -251,6 +281,8 @@ class ScraperSession(Session):
                 if link == self.latest_links.get("Best Match",None) or \
                     ("minutes" not in job_posted_time.lower().split(sep=" ") and "minute" not in job_posted_time.lower().split(sep=" ")):
                     print(f"last_link in Best Match")
+                    if link == self.latest_links.get("Best Match",None):
+                        print("Exact link match found, stopping further scraping.")
                     break
                 await self.page.click(link_div, wait_for='li[data-qa="client-location"] strong')
                 
@@ -259,8 +291,9 @@ class ScraperSession(Session):
                 post_scraping_success = await self.post_scraping_tasks(scrape_success, link, "Best Match")
                 if not post_scraping_success:
                     return False
+                await asyncio.sleep(2)
                 await self.page.go_back()
-                await asyncio.sleep(1)
+                await asyncio.sleep(2)
         return True
                 
                 

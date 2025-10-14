@@ -93,11 +93,13 @@ class Session:
         if not self.client:
             await self.setup_client()
         try:
-            await self.client.post(self.payload_endpoint, json=self.payload.model_dump_json())
+            print(self.payload.model_dump_json())
+            await self.client.post(self.payload_endpoint, json=self.payload.model_dump())
             return True
         except Exception as e:
             self.status["status"] = "Failed"
             self.status["message"] = f"Error sending payload: {e}"
+            print(self.status)
             return False
 
         

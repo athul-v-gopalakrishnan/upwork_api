@@ -4,7 +4,7 @@ cdp_port = 9222
 chrome_executable_path = "/usr/bin/google-chrome"
 user_data_dir = "/home/neo-new/playwright-profiles/cloned-profile"
 
-cloudfare_challenge_div_id = "#PZGgl8"
+cloudfare_challenge_div_id = "#uMtSJ0"
 
 home_url = "about:blank"
 upwork_url = "https://www.upwork.com"
@@ -12,6 +12,7 @@ upwork_login_url = "https://www.upwork.com/ab/account-security/login"
 
 proposals_db_name = "proposals"
 
-send_job_updates_webhook_url_test = "http://localhost:5678/webhook-test/send_job_updates"
+send_job_updates_webhook_url_test = "https://264f935563a3.ngrok-free.app/webhook-test/send_job_updates"
 send_job_updates_webhook_url = "http://localhost:5678/webhook/send_job_updates"
+
 

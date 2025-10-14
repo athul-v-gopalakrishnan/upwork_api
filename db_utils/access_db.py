@@ -63,7 +63,7 @@ async def clear_jobs_table():
     except Exception as e:
         return False, f"Couldnot clear table - {e}"
     
-async def add_proposal(job_url: str, proposal:Proposal, applied: bool = False, approved_by: str = None):
+async def add_proposal(job_url: str, job_type:str, proposal:Proposal, applied: bool = False, approved_by: str = None):
     """
     Insert a proposal into the proposals table.
     proposal_model: a Pydantic model instance.
@@ -73,10 +73,11 @@ async def add_proposal(job_url: str, proposal:Proposal, applied: bool = False, a
         async with pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO proposals (job_url, proposal, applied,approved_by)
-                VALUES ($1, $2, $3, $4)
+                INSERT INTO proposals (job_url, job_type, proposal, applied,approved_by)
+                VALUES ($1, $2, $3, $4, $5)
                 """,
                 job_url,
+                job_type,
                 proposal.model_dump_json(),  # Convert Pydantic model to dict for JSONB
                 applied,
                 approved_by
@@ -104,7 +105,7 @@ async def add_job(job_url: str, job_description:dict):
 async def get_proposal_by_url(job_url: str):
     """
     Retrieve a proposal row from the proposals table by job_url.
-    Returns the row as a dict, or None if not found.
+    Returns the proposal object, or None if not found.
     """
     try:
         pool = await get_pool()
@@ -115,7 +116,8 @@ async def get_proposal_by_url(job_url: str):
             if row:
                 proposal_json = row["proposal"]
                 proposal = Proposal.model_validate_json(proposal_json)
-                return proposal
+                job_type = row["job_type"]
+                return proposal, job_type
             return None
     except Exception as e:
         print(f"Could not retrieve proposal - {e}")
@@ -123,7 +125,7 @@ async def get_proposal_by_url(job_url: str):
         
 async def get_job_by_url(job_url: str):
     """
-    Retrieve a proposal row from the jobs table by job_url.
+    Retrieve a job row from the jobs table by job_url.
     Returns the row as a dict, or None if not found.
     """
     try:
@@ -134,7 +136,8 @@ async def get_job_by_url(job_url: str):
             )
             if row:
                 job_description = row["job_description"]
-                return job_description
+                print(job_description)
+                return json.loads(job_description)
             return None
     except Exception as e:
         print(f"Could not retrieve proposal - {e}")
@@ -230,11 +233,9 @@ async def check_table_schema(table_name: str):
     
 async def main():
     await init_pool()
-    proposal = await create_proposals_table()
+    await create_proposals_table()
     await view_proposals_table()
     await close_pool()
-    return proposal
 
 if __name__ == "__main__":
-    proposal = asyncio.run(main())
-    print(proposal)
+    asyncio.run(main())
