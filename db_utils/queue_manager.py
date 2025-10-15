@@ -59,10 +59,6 @@ async def get_next_task():
                     """
                 )
                 if row:
-                    await conn.execute(
-                        "UPDATE task_queue SET status = 'processing', updated_at = NOW() WHERE id = $1",
-                        row['id']
-                    )
                     return True, dict(row)
                 else:
                     return False, "No pending tasks"
@@ -87,6 +83,18 @@ async def view_queue_table(num_rows: int = 10):
         )
         for row in rows:
             print(dict(row))
+            
+async def update_task_status(task_id:int, status:str):
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE task_queue SET status = $1, updated_at = NOW() WHERE id = $2",
+                status, task_id
+            )
+        return True, "Task status updated successfully"
+    except Exception as e:
+        return False, f"Could not update task status - {e}"
     
 if __name__ == "__main__":
     asyncio.run(main())

@@ -3,6 +3,7 @@ from utils.constants import upwork_login_url, cloudfare_challenge_div_id, upwork
 from utils.models import Proposal
 
 from db_utils.access_db import get_proposal_by_url, update_proposal_by_url
+from db_utils.queue_manager import update_task_status
 
 from typing import Literal, Optional
 import asyncio
@@ -12,6 +13,7 @@ from nyx.page import NyxPage
 
 class ApplicationSession(Session):
     def __init__(self,
+                 task_id:int,
                  page:NyxPage, 
                  job_url:str,
                  username:str, 
@@ -20,7 +22,7 @@ class ApplicationSession(Session):
                  security_answer:str = None, 
                  status_endpoint:str = send_job_updates_webhook_url,
                  ):
-        super().__init__(page, username, password, security_answer, status_endpoint)
+        super().__init__(task_id, page, username, password, security_answer, status_endpoint)
         self.job_url = job_url
         self.human = human
         self.applied = False
@@ -37,32 +39,38 @@ class ApplicationSession(Session):
         try:
             client_setup_success = await self.setup_client()
             if not client_setup_success:
+                await update_task_status(self.task_id, "failed")
                 return False
             proposal_fetch_status = await self.get_proposal()
             if not proposal_fetch_status:
                 await self.send_status()
                 self.print_status()
+                await update_task_status(self.task_id, "failed")
                 return False
             login_status = await self.login(upwork_login_url)
             if not login_status:
                 await self.send_status()
                 self.print_status()
+                await update_task_status(self.task_id, "failed")
                 return False
             reach_bidding_page_status = await self.reach_bidding_page()
             if not reach_bidding_page_status:
                 await self.send_status()
                 self.print_status()
+                await update_task_status(self.task_id, "failed")
                 return False
             apply_status = await self.apply_for_job()
             if not apply_status:
                 await self.send_status()
                 self.print_status()
+                await update_task_status(self.task_id, "failed")
                 return False
             update_proposal_status = await self.update_proposal_status()
             if not update_proposal_status:
                 await self.send_status()
                 self.print_status()
                 return False
+            await update_task_status(self.task_id, "completed")
             self.update_status("Success", "Application process completed successfully")
             await self.send_status()
             self.print_status()

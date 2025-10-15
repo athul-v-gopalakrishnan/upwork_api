@@ -7,7 +7,8 @@ from pydantic import BaseModel
 import asyncio
 
 class Session:
-    def __init__(self, page:NyxPage, username: str, password: str, security_answer: str = None, status_endpoint:str = None, payload_endpoint:str = None, payload:BaseModel = None):
+    def __init__(self, task_id:int, page:NyxPage, username: str, password: str, security_answer: str = None, status_endpoint:str = None, payload_endpoint:str = None, payload:BaseModel = None):
+        self.task_id = task_id
         self.username = username
         self.password = password
         self.security_answer = security_answer

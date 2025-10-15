@@ -14,7 +14,7 @@ from nyx.browser import NyxBrowser
 from upwork_agent.bidder_agent import build_bidder_agent,call_proposal_generator_agent, Proposal
 from db_utils.db_pool import init_pool, close_pool
 from db_utils.access_db import add_proposal, create_proposals_table, create_jobs_table, get_job_by_url
-from db_utils.queue_manager import create_queue_table, enqueue_task, get_next_task
+from db_utils.queue_manager import create_queue_table, enqueue_task, get_next_task, update_task_status
 
 from upwork_agent.scrape_jobs import ScraperSession
 from upwork_agent.application import ApplicationSession
@@ -130,8 +130,9 @@ async def enqueue_task_api(task_type:str, payload = None, priority:int=0):
     status, message = await enqueue_task(task_type=task_type, payload=payload, priority=priority)
     return {"status" : status, "message" : message}
 
-async def check_for_jobs():
+async def check_for_jobs(task_id:int):
     session = ScraperSession(
+            task_id=task_id,
             page = state["page"], 
             links_to_visit=state["filter_urls"], 
             last_links=state["latest_urls"], 
@@ -143,7 +144,7 @@ async def check_for_jobs():
 
 @app.post("/generate_proposal")
 async def generate_proposal_api(job_url:str):
-    job_details = await get_job_by_url(job_url=job_url)
+    job_uuid, job_details = await get_job_by_url(job_url=job_url)
     if not job_details:
         return {"status" : "Failed", "message" : "Job details not found in database."}
     job_type = job_details.get("job_type","Unknown")
@@ -157,7 +158,7 @@ async def generate_proposal_api(job_url:str):
         "job_url" : job_url,
         "proposal" : proposal
     }
-    response = await add_proposal(job_url=job_url, job_type=job_type, proposal = proposal_model, applied=False)
+    response = await add_proposal(uuid = job_uuid,job_url=job_url, job_type=job_type, proposal = proposal_model, applied=False)
     if response:
         return payload
     else:
@@ -165,8 +166,9 @@ async def generate_proposal_api(job_url:str):
         return response
     
 
-async def apply_for_job(job_url: str, human:str = "Unable to verify"):
+async def apply_for_job(task_id:int,job_url: str, human:str = "Unable to verify"):
     session = ApplicationSession(
+            task_id=task_id,
             page = state["page"], 
             job_url=job_url,
             username= LOGIN_USERNAME, 
@@ -191,18 +193,20 @@ async def worker_loop():
         try:
             status,task = await get_next_task()
             if status:
+                task_id = task['id']
                 task_type = task['task_type']
                 print(f"Processing task: {task_type}")
                 for key, value in task.items():
                     print(f"{key}: {value}")
                 if task_type == 'check_for_jobs':
-                    await check_for_jobs()
+                    await check_for_jobs(task_id=task_id)
+                    await update_task_status(task_id=task_id, status='done')
                 elif task_type == 'apply_for_job':
                     payload_string = task.get("payload","")
                     payload = json.loads(payload_string) if payload_string else {}
                     job_url = payload.get("job_url", "")
                     if job_url:
-                        await apply_for_job(job_url=job_url)
+                        await apply_for_job(task_id=task_id,job_url=job_url)
             else:
                 print("No tasks in queue, waiting...")
         except Exception as e:
