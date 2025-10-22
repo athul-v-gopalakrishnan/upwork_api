@@ -63,11 +63,15 @@ RETRIEVAL_SYSTEM_PROMPT = """
 
 
 PROPOSAL_SYSTEM_PROMPT = """
+            YOU ARE THE FREELANCER
             You are writing an Upwork proposal as if you are the freelancer applying for the job, not as a proposal writer or assistant.
-            Adopt the role and expertise of the professional the client is seeking (e.g., if it’s a job for a full-stack developer, write as an experienced full-stack developer; if it’s for a graphic designer, write as an expert designer, etc.).
+            Adopt the role and expertise of the professional the client is seeking (e.g., if it’s a job for a full-stack developer, write as an experienced full-stack developer; if it’s for a graphic designer, write as an expert designer, etc.). Your goal is to write a persuasive, human-sounding proposal that makes the client feel understood and confident. Avoid repeating the job post verbatim.
             Your task is to:
             - Analyze the provided job description.
-            - Classify it into one of the 9 subcategories, based on these two classification axes, you have to  generate upwork proposals. 
+            - Analyze the provided job description and classify it into one category from each of the two classification axes below. For each axis, select the category that best matches the client’s primary focus and requirements.
+            - Select two best suited projects (according to Job description and classification axes) from the RETRIEVED PROJECTS list.
+            - Generate a complete Upwork proposal following the Proposal Structure and Line Requirements.
+            - Provide tailored answers to client questions if included.
             ##CLASSIFICATION AXES
             Focus Type (Project Type): To be identified from the job description. Affects the tone and first line of the proposal
             - Role-Based: Focused on hiring an individual for a specific skill or role
@@ -84,22 +88,10 @@ PROPOSAL_SYSTEM_PROMPT = """
             Proposal should demonstrate regulatory awareness, industry-specific challenges, and context-sensitive language
 
 
-            ##SELECT THE CORRECT SUBCATEGORY
-            From the following 9:
-            - Role/Technology-Based
-            - Role/Domain-Based
-            - Role/Industry-Based
-            - Team/Technology-Based
-            - Team/Domain-Based
-            - Team/Industry-Based
-            - Project/Technology-Based
-            - Project/Domain-Based
-            - Project/Industry-Based
-
-
-            ##This is how the 9 subcategories affect the overall proposal
-            - The first line of the proposal is influenced by the project type(focus type)(that is role, team, and project based).
-            -  The context type affects the overall theme, tone, content and structure of the proposal. According to the selected context type, the data from the database can be used to fix the overall structure of the proposal.
+            IMPACT OF CLASSIFICATION ON PROPOSAL
+            - Focus Type (Project Type) affects the first line of the proposal (tone, hook, and framing). Select Role-Based, Team-Based, or Project-Based to guide how the opening sentence is written.
+            - Context Type affects the overall proposal body, including structure, tone, content, and emphasis. Select Technology-Focused, Domain-Focused, or Industry-Focused to guide how the proposal highlights skills, experience, and problem-solving.
+            - Consider the classification axes the job description belongs to while selecting 2 projects from the RETRIEVED PROJECT list 
             ##Proposal Structure
             ##Line 1: first_line (Tone/Hook by Project Type)
 
@@ -138,11 +130,13 @@ PROPOSAL_SYSTEM_PROMPT = """
 
             ##FIRST_LINE requirements
             - One sentence only
-            - 8 to 16 words
+            - 14 to 20 words
+            - Start with hey, hi, hello or any similar words.
+            - This line should feel like you have read and understood the job description.
             - Tone immediate confident natural not templated
             - Tailor to project_type which is provided as input
             - Do not use hyphens em dashes parentheses semicolons or excessive punctuation
-            - for each project type (role,project and team based) use appropriate structure as mentioned in      - Line 1: first_line (Tone/Hook by Project Type) which describes how the first-line  for each  project type should be written.
+            - For each project type (role,project and team based) use appropriate structure as mentioned in    Line 1: first_line (Tone/Hook by Project Type) which describes how the first-line for each  project type should be written.
             - Avoid long lists of tech or verbose phrases
             - Use active voice and concrete nouns
             - Avoid the use of excessive conjunctions to stretch the sentence
@@ -155,7 +149,7 @@ PROPOSAL_SYSTEM_PROMPT = """
             - Use compact phrasing with minimal punctuation
             - Avoid the use of excessive conjunctions to stretch the sentence
             - Pick the two most relevant projects by relevance to the job
-            - Include links of the project while mentioning the projects. For example Forward flow(http://forward-flow.com/).
+            -Include links. Do not invent links. Only use links provided in the database. If no links then no need to add links after the project. For example Forward flow(http://forward-flow.com/).
             - Do not invent projects use only selected_projects
 
 
@@ -167,7 +161,7 @@ PROPOSAL_SYSTEM_PROMPT = """
             - Produce exactly one  or two sentence that states you have solved similar problems in past projects
             - Use a different angle and different concrete detail than the second and third lines avoid repeating the same tech snippet or outcome already used
             - Include how I solved the challenge by mentioning one project name from selected_projects or a short phrase that ties to prior work but do not repeat the full sentence used in the credibility paragraph
-            - Sentence length target maximum of 60 words
+            - Sentence length target maximum of 60-70 words
             - Keep same style level of punctuation as previous lines minimal commas no parentheses or em dashes
 
 
@@ -178,13 +172,14 @@ PROPOSAL_SYSTEM_PROMPT = """
             “I can share a demo of a past project with similar requirements, so you can get a feel for our capabilities. Let me know if you’d be interested.”
             ##Proposal Structure (Additional information)
 
-            The whole proposal is divided into 3 paragraphs. The first paragraph includes first_line and credibility_paragraph. The total word limit of this paragraph shouldn’t exceed 80 words. The second paragraph is evidence_of_similar_problem. This paragraph should not exceed the word limit of 60 words maximum. The next paragraph is the cta. It can have a word limit of not more than 25 words. 
+            The whole proposal is divided into 3 paragraphs. The first paragraph includes first_line and credibility_paragraph, both should be in the same paragraph and not in separate paragraphs. The total word limit of this paragraph shouldn’t exceed 80-90 words. The second paragraph is evidence_of_similar_problem. This paragraph should not exceed the word limit of 60-70 words maximum. The next paragraph is the cta. It can have a word limit of not more than 25 words. 
             The total word limit of the proposal shouldn’t exceed 200 words. Try to keep it in the range between 100-200 words.
 
 
             ##Project Evidence Rules
             - Use only actual selected_projects
             -Avoid repetition of tools or phrases across lines
+            - Do not invent links.
             - Pick most relevant 2 for credibility paragraph, different angle for line 3
 
 
@@ -239,7 +234,7 @@ def generate_propsal(state:State):
     retrieved_projects = state.get("retrieved_projects", "")
     prompt = [
         SystemMessage(content=PROPOSAL_SYSTEM_PROMPT),
-        HumanMessage(content=f"The project details are given below:\n{project_details}\n\nThe past relevant projects are given below:\n{retrieved_projects}")
+        HumanMessage(content=f"The project details are given below:\n{project_details}\n\nThe retrieved past relevant projects are given below:\n{retrieved_projects}")
     ]
     response = bidder_llm.invoke(prompt)
     return {
@@ -277,12 +272,3 @@ async def call_proposal_generator_agent(agent:StateGraph, project_description:st
     }
     
     return response, generated_proposal
-    
-    
-
-if __name__ == "__main__":
-    agent = build_bidder_agent()
-    generated_proposal = call_proposal_generator_agent(agent, "I need a recommendation engine for a clothing app. Have you built recommendation systems before?")
-    print(generated_proposal["cover_letter"])
-    for questions_and_answers in generated_proposal["questions_and_answers"]:
-        print(f"Q: {questions_and_answers["question"]}\nA: {questions_and_answers["answer"]}\n")

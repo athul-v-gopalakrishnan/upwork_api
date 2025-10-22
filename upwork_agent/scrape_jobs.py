@@ -67,6 +67,9 @@ class ScraperSession(Session):
             self.print_status()
             await update_task_status(self.task_id, "failed")
             await self.close_client()
+            with open("latest_links.pkl", "wb") as f:
+                pickle.dump(self.get_latest_links(), f)
+                print("Latest links saved to latest_links.pkl")
             await self.page.goto(home_url)
             return True
         except Exception as e:
@@ -78,11 +81,6 @@ class ScraperSession(Session):
             await self.close_client()
             await self.page.goto(home_url)
             return False
-        finally:
-            with open("latest_links.pkl", "wb") as f:
-                pickle.dump(self.get_latest_links(), f)
-                print("Latest links saved to latest_links.pkl")
-                
                 
     async def scrape_job_page(self):
         try:
@@ -206,6 +204,7 @@ class ScraperSession(Session):
             link_div = await job_posting.query_selector('a[data-test="job-tile-title-link UpLink"]')
             link = await link_div.get_attribute('href')
             uuid = await link_div.get_attribute('data-ev-job-uid')
+            uuid = int(uuid) if uuid and uuid.isdigit() else None
             if not link:
                 self.update_status("Failed", "Problem extracting link ... \nMaybe the website structure has changed")
                 await self.send_status()
@@ -213,26 +212,28 @@ class ScraperSession(Session):
                 return False
             link = upwork_url + link
             if first_link:
-                self.session_latest_links[category] = link
+                self.session_latest_links[category] = uuid
                 print(f"Setting latest link for {category}: {link}")
                 print(  self.session_latest_links )
                 first_link = False
-                
-            is_recent_link = any(x in job_posted_time.lower() for x in ("minute", "minutes", "second", "seconds"))
-            if link == self.latest_links.get("Best Match",None) or \
+            
+            print(f"{uuid} === {self.latest_links.get(category,None)}")
+            if uuid == self.latest_links.get(category,None) or \
                     (("minutes" not in job_posted_time.lower().split(sep=" ") and "minute" not in job_posted_time.lower().split(sep=" ")) \
                         and ("seconds" not in job_posted_time.lower().split(sep=" ") and "second" not in job_posted_time.lower().split(sep=" "))):
                 print(f"last_link in {category}")
-                if link == self.latest_links.get(category,None):
+                if uuid == self.latest_links.get(category,None):
+                    print("true")
                     print("Exact link match found, stopping further scraping.")
                 break
+            print("Fasle")
             await self.page.click(link_div, wait_for='li[data-qa="client-location"] strong')
             
             try:
                 scrape_success = await self.scrape_job_page()
             except PrivateProfileError:
                 continue
-            post_processing_success = await self.post_scraping_tasks(scrape_success, uuid = int(uuid), link = link, category = category)
+            post_processing_success = await self.post_scraping_tasks(scrape_success, uuid = uuid, link = link, category = category)
             if not post_processing_success:
                 return False
             await asyncio.sleep(2)
@@ -286,7 +287,8 @@ class ScraperSession(Session):
                 print(f"Job posted time: {job_posted_time.strip()}")
                 link_div = await job_posting.query_selector('a[data-ev-label="link"]')
                 link = await link_div.get_attribute('href')
-                uuid = await link_div.get_attribute('data-ev-job-uid')
+                uuid = await link_div.get_attribute('data-ev-opening_uid')
+                uuid = int(uuid) if uuid and uuid.isdigit() else None
                 if not link:
                     self.status["status"] = "Failed"
                     self.status["message"] = "Problem extracting link ... \nMaybe the website structure has changed"
@@ -295,13 +297,13 @@ class ScraperSession(Session):
                     return False
                 link = upwork_url + link
                 if first_link:
-                    self.session_latest_links["Best Match"] = link
+                    self.session_latest_links["Best Match"] = uuid
                     first_link = False
-                if link == self.latest_links.get("Best Match",None) or \
+                if uuid == self.latest_links.get("Best Match",None) or \
                     (("minutes" not in job_posted_time.lower().split(sep=" ") and "minute" not in job_posted_time.lower().split(sep=" ")) \
                         and ("seconds" not in job_posted_time.lower().split(sep=" ") and "second" not in job_posted_time.lower().split(sep=" "))):
                     print(f"last_link in Best Match")
-                    if link == self.latest_links.get("Best Match",None):
+                    if uuid == self.latest_links.get("Best Match",None):
                         print("Exact link match found, stopping further scraping.")
                     break
                 await self.page.click(link_div, wait_for='li[data-qa="client-location"] strong')

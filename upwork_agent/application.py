@@ -145,12 +145,6 @@ class ApplicationSession(Session):
             self.print_status()
             return False
         try:
-            await self.page.goto(self.job_url, wait_for = 'button[data-cy="submit-proposal-button"]', captcha_selector=cloudfare_challenge_div_id, wait_until= "domcontentloaded", referer="https://www.upwork.com")
-            await asyncio.sleep(2)
-            
-            await self.page.scroll_by(450)
-            await self.page.click(selector = 'button[data-cy="submit-proposal-button"]', expect_navigation=True, wait_for=None)
-            await asyncio.sleep(3)
             if self.proposal_type == "Fixed Price":
                 return True
             cover_letter = self.proposal.cover_letter

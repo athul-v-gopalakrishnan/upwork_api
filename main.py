@@ -14,7 +14,8 @@ from nyx.browser import NyxBrowser
 from upwork_agent.bidder_agent import build_bidder_agent,call_proposal_generator_agent, Proposal
 from db_utils.db_pool import init_pool, close_pool
 from db_utils.access_db import add_proposal, create_proposals_table, create_jobs_table, get_job_by_url
-from db_utils.queue_manager import create_queue_table, enqueue_task, get_next_task, update_task_status
+from db_utils.queue_manager import create_queue_table, enqueue_task, get_next_task, update_task_status, abort_tasks_on_restart
+from utils import generate_search_links
 
 from upwork_agent.scrape_jobs import ScraperSession
 from upwork_agent.application import ApplicationSession
@@ -30,9 +31,12 @@ SECURITY_QUESTION_ANSWER = os.getenv("UPWORK_SECURITY_QUESTION_ANSWER")
 state = {}
 latest_urls_path = 'latest_links.pkl'
 if os.path.exists(latest_urls_path):
+    print("Loading latest URLs from", latest_urls_path)
     with open(latest_urls_path, 'rb') as f:
         latest_urls = pickle.load(f)
+    print("Latest URLs loaded:", latest_urls)
 else:
+    print("No latest URLs file found, initializing with None values.")
     latest_urls = {
         "Frontend" : None,
         "Backend" : None,
@@ -56,20 +60,7 @@ async def lifespan(app: FastAPI):
     await browser.start()
     state['browser'] = browser
     print("Browser started")
-    state["filter_urls"] = {
-        "Frontend" : "https://www.upwork.com/nx/search/jobs/?amount=5000-&contractor_tier=3&duration_v3=week,month,semester,ongoing&hourly_rate=15-&location=Americas,Europe,Oceania&q=angular%20OR%20React%20OR%20Javascript%20OR%20Typescript&sort=recency&t=0,1",
-        "Backend" : "https://www.upwork.com/nx/search/jobs/?amount=5000-&contractor_tier=2,3&duration_v3=week,month,semester,ongoing&hourly_rate=15-&location=Americas,Europe,Oceania&q=NodeJS%20OR%20Golang%20OR%20Python%20OR%20Database%20OR%20MongoDB%20OR%20SQL%20OR%20postgresql%20OR%20API%20Integration&sort=recency&t=0,1",
-        "Fullstack" : "https://www.upwork.com/nx/search/jobs/?amount=5000-&contractor_tier=3&duration_v3=week,month,semester,ongoing&hourly_rate=15-&location=Americas,Europe,Oceania&per_page=50&q=MEAN%20OR%20MERN%20OR%20Fullstack%20OR%20MongoDB&sort=recency&t=0,1",
-        "Mobile" : "https://www.upwork.com/nx/search/jobs/?amount=5000-&contractor_tier=3&duration_v3=week,month,semester,ongoing&hourly_rate=15-&location=Americas,Europe,Oceania&per_page=50&q=%22React%20Native%22%20OR%20Flutter%20OR%20PWA%20OR%20%22%20Progressive%20Web%20App%22&sort=recency&t=0,1",
-        "AI/ML" : "https://www.upwork.com/nx/search/jobs/?amount=2000-&contractor_tier=2,3&duration_v3=week,month,semester,ongoing&hourly_rate=15-&payment_verified=1&q=natural%20language%20processing%20or%20nlp%20or%20tensorflow%20or%20opencv%20or%20mlops%20or%20ml%20or%20machine%20learning%20or%20chatbot&sort=recency&t=0,1",
-        "GenAI" : "https://www.upwork.com/nx/search/jobs/?amount=2000-&contractor_tier=2,3&duration_v3=week,month,semester,ongoing&hourly_rate=15-&payment_verified=1&q=artificial%20intelligence%20or%20ai%20agent%20or%20ai%20or%20agenti%20ai%20or%20rag%20or%20llm%20or%20large%20language%20model%20or%20data%20science%20or%20open%20ai&sort=recency&t=0,1",
-        "Devops" : "https://www.upwork.com/nx/search/jobs/?amount=5000-&contractor_tier=3&duration_v3=week,month,semester,ongoing&hourly_rate=15-&location=Americas,Europe,Oceania&per_page=50&q=Docker%20OR%20Pineline%20OR%20CI%2FCD%20OR%20AWS%20OR%20GCP%20OR%20Azure%20OR%20Monitoring%20OR%20Prometheus%20OR%20Grafana%20OR%20Kubernetes&sort=recency&t=0,1",
-        "IOT" : "https://www.upwork.com/nx/search/jobs/?amount=5000-&contractor_tier=3&duration_v3=week,month,semester,ongoing&hourly_rate=15-&location=Americas,Europe,Oceania&per_page=50&q=IoT%20OR%20Internet%20of%20Things&sort=recency&t=0,1",
-        "Low code/No code" : "https://www.upwork.com/nx/search/jobs/?amount=5000-&contractor_tier=2,3&duration_v3=week,month,semester,ongoing&hourly_rate=15-&location=Americas,Europe,Oceania&per_page=50&q=Bubble%20OR%20Webflow&sort=recency&t=0,1",
-        "Non Tech" : "https://www.upwork.com/nx/search/jobs/?amount=5000-&contractor_tier=2,3&duration_v3=week,month,semester,ongoing&hourly_rate=15-&location=Americas,Europe,Oceania&per_page=50&q=web%20OR%20development%20OR%20software%20OR%20Mobile%20OR%20MVP%20OR%20SAAS%20OR%20Startup%20OR%20AI&sort=recency&t=0,1",
-        "Data Engineering" : "https://www.upwork.com/nx/search/jobs/?amount=2000-&contractor_tier=2,3&duration_v3=week,month,semester,ongoing&hourly_rate=15-&payment_verified=1&q=power%20bi%20or%20data%20engineering%20or%20snowflake%20or%20dashboard&sort=recency&t=0,1",
-        "Business Intelligence" : "https://www.upwork.com/nx/search/jobs/?amount=2000-&contractor_tier=2,3&duration_v3=week,month,semester,ongoing&hourly_rate=15-&payment_verified=1&q=data%20analysis%20or%20data%20analyst%20or%20quicksight%20or%20etl%20or%20elt%20or%20dax%20or%20data%20lakehouse%20or%20sql%20or%20bi%20or%20ai%20byte%20or%20business%20intelligence&sort=recency&t=0,1"
-    }
+    state["filter_urls"] = generate_search_links()
     state["latest_urls"] = latest_urls
     page = await state.get("browser").new_page()
     state["page"] = page
@@ -89,6 +80,8 @@ async def lifespan(app: FastAPI):
     print(job_table_status, msg)
     task_queue_table_status, msg = await create_queue_table()
     print(task_queue_table_status, msg)
+    abort_status, msg = await abort_tasks_on_restart()
+    print(abort_status, msg)
     worker_task = asyncio.create_task(worker_loop())
     print("Worker loop started")
     yield

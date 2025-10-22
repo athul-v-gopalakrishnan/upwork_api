@@ -18,7 +18,7 @@ async def create_queue_table():
                 task_type TEXT NOT NULL,
                 payload JSONB,
                 priority INTEGER DEFAULT 0,
-                status TEXT DEFAULT 'pending', -- pending, processing, done, failed
+                status TEXT DEFAULT 'pending', -- pending, processing, done, failed, aborted_via_restart
                 created_at TIMESTAMP DEFAULT NOW(),
                 updated_at TIMESTAMP DEFAULT NOW()
             );
@@ -95,6 +95,31 @@ async def update_task_status(task_id:int, status:str):
         return True, "Task status updated successfully"
     except Exception as e:
         return False, f"Could not update task status - {e}"
+    
+async def abort_tasks_on_restart(task_type: str = "check_for_jobs"):
+    """
+    Mark pending/processing tasks of the given task_type as 'aborted via restart'.
+    Returns (True, message) or (False, error_message).
+    """
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                """
+                UPDATE task_queue
+                SET status = 'aborted_via_restart', updated_at = NOW()
+                WHERE task_type = $1 AND status IN ('pending', 'processing');
+                """,
+                task_type
+            )
+            # result is like "UPDATE <n>"
+            try:
+                affected = int(result.split()[-1])
+            except Exception:
+                affected = 0
+        return True, f"Marked {affected} '{task_type}' tasks as aborted via restart"
+    except Exception as e:
+        return False, f"Could not mark tasks as aborted - {e}"
     
 if __name__ == "__main__":
     asyncio.run(main())
