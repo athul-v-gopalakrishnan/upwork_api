@@ -136,30 +136,68 @@ async def check_for_jobs(task_id:int):
             security_answer=SECURITY_QUESTION_ANSWER
         )
     await session.run()
+    
+@app.post("/update_proposal_prompt")
+async def update_proposal_prompt_api(prompt_text:str):
+    try:
+        new_version = await state["prompt_archive"].add_prompt("proposal", prompt_text)
+        return {"status" : "Done", "new_version" : new_version}
+    except Exception as e:
+        return {"status" : "Failed", "message" : str(e)}
+    
+@app.post("/get_proposal_prompt")
+async def get_proposal_prompt_api():
+    try:
+        prompt_text = await state["prompt_archive"].get_active_prompt("proposal")
+        if prompt_text:
+            return {"status" : "Done", "prompt" : prompt_text}
+        else:
+            return {"status" : "Failed", "message" : "No active prompt found."}
+    except Exception as e:
+        return {"status" : "Failed", "message" : str(e)}
+    
+@app.post("/list_proposal_prompt_versions")
+async def list_proposal_prompt_versions_api():
+    try:
+        versions = await state["prompt_archive"].list_versions("proposal")
+        return {"status" : "Done", "versions" : versions}
+    except Exception as e:
+        return {"status" : "Failed", "message" : str(e)}
+    
+@app.post("/rollback_proposal_prompt")
+async def rollback_proposal_prompt_api(version:int):
+    try:
+        await state["prompt_archive"].rollback("proposal", version)
+        return {"status" : "Done", "version" : version}
+    except Exception as e:
+        return {"status" : "Failed", "message" : str(e)}
 
 @app.post("/generate_proposal")
 async def generate_proposal_api(job_url:str):
-    job_uuid, job_details = await get_job_by_url(job_url=job_url)
-    if not job_details:
-        return {"status" : "Failed", "message" : "Job details not found in database."}
-    job_type = job_details.get("job_type","Unknown")
-    print(f"Generating proposal for job type: {job_type}")
-    job_details = json.dumps(job_details)
-    print(f"Job Details: {job_details}")
-    proposal_system_prompt = await state["prompt_archive"].get_active_prompt("proposal")
-    proposal, proposal_model = await call_proposal_generator_agent(state["bidder_agent"], job_details, proposal_system_prompt=proposal_system_prompt)
-    payload = {
-        "status" : "Done",
-        "job_type" : job_type,
-        "job_url" : job_url,
-        "proposal" : proposal
-    }
-    response = await add_proposal(uuid = job_uuid,job_url=job_url, job_type=job_type, proposal = proposal_model, applied=False)
-    if response:
-        return payload
-    else:
-        print(response)
-        return response
+    try:
+        job_uuid, job_details = await get_job_by_url(job_url=job_url)
+        if not job_details:
+            return {"status" : "Failed", "message" : "Job details not found in database."}
+        job_type = job_details.get("job_type","Unknown")
+        print(f"Generating proposal for job type: {job_type}")
+        job_details = json.dumps(job_details)
+        print(f"Job Details: {job_details}")
+        proposal_system_prompt = await state["prompt_archive"].get_active_prompt("proposal")
+        proposal, proposal_model = await call_proposal_generator_agent(state["bidder_agent"], job_details, proposal_system_prompt=proposal_system_prompt)
+        payload = {
+            "status" : "Done",
+            "job_type" : job_type,
+            "job_url" : job_url,
+            "proposal" : proposal
+        }
+        response = await add_proposal(uuid = job_uuid,job_url=job_url, job_type=job_type, proposal = proposal_model, applied=False)
+        if response:
+            return payload
+        else:
+            return response 
+    except Exception as e:
+        traceback.print_exc()
+        return {"status" : "Failed", "message" : str(e)}
     
 
 async def apply_for_job(task_id:int,job_url: str, human:str = "Unable to verify"):
