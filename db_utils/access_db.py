@@ -64,6 +64,8 @@ async def clear_jobs_table():
         return True, "Cleared jobs table"
     except Exception as e:
         return False, f"Couldnot clear table - {e}"
+    finally:
+        await pool.close()
     
 async def add_proposal(uuid:int, job_url: str, job_type:str, proposal:Proposal, applied: bool = False, approved_by: str = None):
     """

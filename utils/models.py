@@ -1,9 +1,7 @@
-from typing import Sequence
-from typing_extensions import Annotated, TypedDict, List, Optional
+from typing_extensions import TypedDict, List, Optional
 from pydantic import BaseModel,Field
 
-from langchain_core.messages import SystemMessage,BaseMessage, AIMessage, HumanMessage, ToolMessage
-from langgraph.graph.message import add_messages
+from langchain_core.messages import BaseMessage
 
 
 class Milestone(BaseModel):
@@ -20,11 +18,12 @@ class Proposal(BaseModel):
     questions_and_answers: List[QuestionAnswer] = Field(default_factory=list , description="List of questions and your answers")
     
 class State(TypedDict):
-    messages:Annotated[Sequence[BaseMessage],add_messages]
+    messages:BaseMessage
     rag_query:Optional[str]
     proposal:Optional[Proposal]
     project_details:Optional[str]
     retrieved_projects:Optional[str]
+    proposal_system_prompt:Optional[str]
     
 class FinalJobPayload(BaseModel):
     status: str = Field("", description="status")

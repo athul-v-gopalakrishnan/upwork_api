@@ -3,21 +3,13 @@ from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
 from langchain_openai import OpenAIEmbeddings
 from langchain_postgres import PGVector
-from langchain_core.tools import tool
 from langgraph.graph import StateGraph
-from langgraph.graph.message import add_messages
 
 from vault.db_config import DB_CONNECTION_STRING
 from utils.models import *
 
-from langgraph.graph import StateGraph, END
-from langgraph.prebuilt import ToolNode
-from langgraph.checkpoint.postgres import PostgresSaver
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.checkpoint.base import BaseCheckpointSaver
-from langchain_core.messages import SystemMessage,BaseMessage, AIMessage, HumanMessage, ToolMessage
-from langchain_core.runnables import RunnableConfig
-from langchain_core.prompts import ChatPromptTemplate
+from langgraph.graph import StateGraph
+from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 
 load_dotenv()
     
@@ -26,7 +18,6 @@ llm_name = "openai:gpt-5"
 llm = init_chat_model(llm_name)
 retriever_llm = init_chat_model("openai:gpt-5-nano")
 embedding_model = OpenAIEmbeddings(model="text-embedding-3-large")
-memory = MemorySaver()
 
 RETRIEVAL_SYSTEM_PROMPT = """
             You are a specialized query generator for an Upwork proposal system.
@@ -62,7 +53,7 @@ RETRIEVAL_SYSTEM_PROMPT = """
 
 
 
-PROPOSAL_SYSTEM_PROMPT = """
+PROPOSAL_SYSTEM_PROMPT_BACKUP = """
             YOU ARE THE FREELANCER
             You are writing an Upwork proposal as if you are the freelancer applying for the job, not as a proposal writer or assistant.
             Adopt the role and expertise of the professional the client is seeking (e.g., if it’s a job for a full-stack developer, write as an experienced full-stack developer; if it’s for a graphic designer, write as an expert designer, etc.). Your goal is to write a persuasive, human-sounding proposal that makes the client feel understood and confident. Avoid repeating the job post verbatim.
@@ -205,16 +196,10 @@ def retrieve(
         for doc in retrieved_docs
     )
     return {
-        "retrieved_projects": serialised,
-        "messages":state["messages"] + [AIMessage(content=serialised)],
+        "retrieved_projects": serialised
     }
 
 bidder_llm = llm.with_structured_output(Proposal)
-
-def check_for_tool_calls(state:State):
-    last_message = state["messages"][-1]
-    print(hasattr(last_message, "tool_calls") and bool(last_message.tool_calls))
-    return (hasattr(last_message, "tool_calls") and bool(last_message.tool_calls))
 
 def generate_search_query(state:State):
     project_details = state.get("project_details", "")
@@ -225,24 +210,23 @@ def generate_search_query(state:State):
     ]
     response = retriever_llm.invoke(prompt)
     return {
-        "rag_query":response.content,
-        "messages":state["messages"] + [AIMessage(content=response.content)]
+        "rag_query":response.content
         }
     
 def generate_propsal(state:State):
     project_details = state.get("project_details", "")
     retrieved_projects = state.get("retrieved_projects", "")
+    PROPOSAL_SYSTEM_PROMPT = state.get("proposal_system_prompt", PROPOSAL_SYSTEM_PROMPT_BACKUP)
     prompt = [
         SystemMessage(content=PROPOSAL_SYSTEM_PROMPT),
         HumanMessage(content=f"The project details are given below:\n{project_details}\n\nThe retrieved past relevant projects are given below:\n{retrieved_projects}")
     ]
     response = bidder_llm.invoke(prompt)
     return {
-        "proposal":response,
-        "messages":state["messages"] + [AIMessage(content=response.model_dump_json(indent=2))]
+        "proposal":response
         }
 
-def build_bidder_agent(checkpointer)->StateGraph:
+def build_bidder_agent()->StateGraph:
     graph_builder = StateGraph(State)
     graph_builder.add_node(generate_search_query)
     graph_builder.add_node(retrieve)
@@ -251,18 +235,15 @@ def build_bidder_agent(checkpointer)->StateGraph:
     graph_builder.add_edge("generate_search_query", "retrieve")
     graph_builder.add_edge("retrieve", "generate_propsal")
     graph_builder.set_finish_point("generate_propsal")
-    graph = graph_builder.compile(checkpointer=checkpointer, )
+    graph = graph_builder.compile()
     return graph
 
-async def call_proposal_generator_agent(agent:StateGraph, project_description:str):
+async def call_proposal_generator_agent(agent:StateGraph, project_description:str, proposal_system_prompt:str = None):
     initial_state:State = {
         "messages":[HumanMessage(content=f"The project details are given below:\n{project_description}")],
         "project_details":project_description,
     }
-    final_state = await agent.ainvoke(initial_state, config={
-                    "configurable": {
-                        "thread_id": "user123",
-                    }})
+    final_state = await agent.ainvoke(initial_state)
     generated_proposal =  final_state["proposal"]
     
     response = {

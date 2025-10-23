@@ -10,12 +10,14 @@ import os
 from dotenv import load_dotenv
 
 from nyx.browser import NyxBrowser
+from nyx.page import NyxPage
 
 from upwork_agent.bidder_agent import build_bidder_agent,call_proposal_generator_agent, Proposal
 from db_utils.db_pool import init_pool, close_pool
 from db_utils.access_db import add_proposal, create_proposals_table, create_jobs_table, get_job_by_url
 from db_utils.queue_manager import create_queue_table, enqueue_task, get_next_task, update_task_status, abort_tasks_on_restart
 from utils import generate_search_links
+from utils.prompts_archive import PromptArchive
 
 from upwork_agent.scrape_jobs import ScraperSession
 from upwork_agent.application import ApplicationSession
@@ -56,24 +58,24 @@ else:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup code
-    browser = NyxBrowser()
+    browser:NyxBrowser = NyxBrowser()
     await browser.start()
     state['browser'] = browser
     print("Browser started")
     state["filter_urls"] = generate_search_links()
     state["latest_urls"] = latest_urls
-    page = await state.get("browser").new_page()
+    page:NyxPage = await state.get("browser").new_page()
     state["page"] = page
     await init_pool()
     print("Database pool initialized")
-    # cm = PostgresSaver.from_conn_string(MEMORYDB_CONNECTION_STRING)
-    # state["checkpointer"] = cm.__enter__()
-    # state["checkpointer"].setup()
+    prompt_archive:PromptArchive = PromptArchive()
+    state["prompt_archive"] = prompt_archive
+    await state["prompt_archive"].init()
+    print("Prompt archive initialized")
     cm = MemorySaver()
     state["checkpointer"] = cm
     state["bidder_agent"] = build_bidder_agent(state["checkpointer"])
     print("Bidder agent created")
-    state["application_underway"] = False
     proposal_table_status, msg = await create_proposals_table()
     print(proposal_table_status, msg)
     job_table_status, msg = await create_jobs_table()
@@ -144,7 +146,8 @@ async def generate_proposal_api(job_url:str):
     print(f"Generating proposal for job type: {job_type}")
     job_details = json.dumps(job_details)
     print(f"Job Details: {job_details}")
-    proposal, proposal_model = await call_proposal_generator_agent(state["bidder_agent"], job_details)
+    proposal_system_prompt = await state["prompt_archive"].get_active_prompt("proposal")
+    proposal, proposal_model = await call_proposal_generator_agent(state["bidder_agent"], job_details, proposal_system_prompt=proposal_system_prompt)
     payload = {
         "status" : "Done",
         "job_type" : job_type,
