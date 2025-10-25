@@ -70,6 +70,7 @@ async def lifespan(app: FastAPI):
     print("Database pool initialized")
     prompt_archive:PromptArchive = PromptArchive()
     state["prompt_archive"] = prompt_archive
+    state["proposal_prompt_changed"] = True
     await state["prompt_archive"].init()
     print("Prompt archive initialized")
     cm = MemorySaver()
@@ -141,6 +142,7 @@ async def check_for_jobs(task_id:int):
 async def update_proposal_prompt_api(prompt_text:str):
     try:
         new_version = await state["prompt_archive"].add_prompt("proposal", prompt_text)
+        state["proposal_prompt_changed"] = True
         return {"status" : "Done", "new_version" : new_version}
     except Exception as e:
         return {"status" : "Failed", "message" : str(e)}
@@ -168,6 +170,7 @@ async def list_proposal_prompt_versions_api():
 async def rollback_proposal_prompt_api(version:int):
     try:
         await state["prompt_archive"].rollback("proposal", version)
+        state["proposal_prompt_changed"] = True
         return {"status" : "Done", "version" : version}
     except Exception as e:
         return {"status" : "Failed", "message" : str(e)}
@@ -182,8 +185,10 @@ async def generate_proposal_api(job_url:str):
         print(f"Generating proposal for job type: {job_type}")
         job_details = json.dumps(job_details)
         print(f"Job Details: {job_details}")
-        proposal_system_prompt = await state["prompt_archive"].get_active_prompt("proposal")
-        proposal, proposal_model = await call_proposal_generator_agent(state["bidder_agent"], job_details, proposal_system_prompt=proposal_system_prompt)
+        if state.get("proposal_prompt_changed", True):
+            state["proposal_system_prompt"] = await state["prompt_archive"].get_active_prompt("proposal")
+            state["proposal_prompt_changed"] = False
+        proposal, proposal_model = await call_proposal_generator_agent(state["bidder_agent"], job_details, proposal_system_prompt=state["proposal_system_prompt"])
         payload = {
             "status" : "Done",
             "job_type" : job_type,
