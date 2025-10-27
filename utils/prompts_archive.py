@@ -88,6 +88,18 @@ class PromptArchive:
             """, prompt_name)
             return [dict(r) for r in records]
         
+    async def get_prompt_by_version(self, prompt_name: str, version: int) -> str | None:
+        """
+        Return the prompt_text for the given prompt_name and version.
+        Returns None if not found.
+        """
+        async with self.pool.acquire() as conn:
+            record = await conn.fetchrow(
+                "SELECT prompt_text FROM prompts WHERE prompt_name=$1 AND version=$2",
+                prompt_name, version
+            )
+            return record["prompt_text"] if record else None
+        
     async def clear_prompts(self):
         async with self.pool.acquire() as conn:
             await conn.execute("DELETE FROM prompts;")

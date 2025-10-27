@@ -143,16 +143,16 @@ async def update_proposal_prompt_api(prompt_text:str):
     try:
         new_version = await state["prompt_archive"].add_prompt("proposal", prompt_text)
         state["proposal_prompt_changed"] = True
-        return {"status" : "Done", "new_version" : new_version}
+        return {"status" : "Done", "value" : f"Prompt updated to version {new_version}"}
     except Exception as e:
         return {"status" : "Failed", "message" : str(e)}
     
-@app.post("/get_proposal_prompt")
-async def get_proposal_prompt_api():
+@app.post("/get_active_proposal_prompt")
+async def get_active_proposal_prompt_api():
     try:
         prompt_text = await state["prompt_archive"].get_active_prompt("proposal")
         if prompt_text:
-            return {"status" : "Done", "prompt" : prompt_text}
+            return {"status" : "Done", "value" : prompt_text}
         else:
             return {"status" : "Failed", "message" : "No active prompt found."}
     except Exception as e:
@@ -162,7 +162,12 @@ async def get_proposal_prompt_api():
 async def list_proposal_prompt_versions_api():
     try:
         versions = await state["prompt_archive"].list_versions("proposal")
-        return {"status" : "Done", "versions" : versions}
+        output = ""
+        for version in versions:
+            for key, value in version.items():
+                output += f"{key} : {value}\n"
+            output += "\n"
+        return {"status" : "Done", "value" : output}
     except Exception as e:
         return {"status" : "Failed", "message" : str(e)}
     
@@ -171,7 +176,18 @@ async def rollback_proposal_prompt_api(version:int):
     try:
         await state["prompt_archive"].rollback("proposal", version)
         state["proposal_prompt_changed"] = True
-        return {"status" : "Done", "version" : version}
+        return {"status" : "Done", "value" : f"Rolled back to {version}"}
+    except Exception as e:
+        return {"status" : "Failed", "message" : str(e)}
+    
+@app.post("/get_proposal_prompt")
+async def get_proposal_prompt_by_version_api(version:int):
+    try:
+        prompt_text = await state["prompt_archive"].get_prompt_by_version("proposal", version)
+        if prompt_text:
+            return {"status" : "Done", "value" : prompt_text}
+        else:
+            return {"status" : "Failed", "message" : "Prompt not found for the specified version."}
     except Exception as e:
         return {"status" : "Failed", "message" : str(e)}
 
