@@ -22,8 +22,6 @@ from utils.prompts_archive import PromptArchive
 from upwork_agent.scrape_jobs import ScraperSession
 from upwork_agent.application import ApplicationSession
 
-from langgraph.checkpoint.memory import MemorySaver
-
 load_dotenv()
 
 LOGIN_USERNAME = os.getenv("UPWORK_USERNAME")
@@ -73,9 +71,7 @@ async def lifespan(app: FastAPI):
     state["proposal_prompt_changed"] = True
     await state["prompt_archive"].init()
     print("Prompt archive initialized")
-    cm = MemorySaver()
-    state["checkpointer"] = cm
-    state["bidder_agent"] = build_bidder_agent(state["checkpointer"])
+    state["bidder_agent"] = build_bidder_agent()
     print("Bidder agent created")
     proposal_table_status, msg = await create_proposals_table()
     print(proposal_table_status, msg)
@@ -93,7 +89,7 @@ async def lifespan(app: FastAPI):
     worker_task.cancel()
     await close_pool()
     print("Database pool closed")
-    await browser.shutdown()
+    await state['browser'].shutdown()
 
 state["last_url"] = ""
     

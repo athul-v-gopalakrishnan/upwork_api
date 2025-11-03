@@ -1,16 +1,9 @@
 import asyncpg
 import asyncio
-import json
-from asyncpg.utils import _quote_ident
-
-from upwork_agent.bidder_agent import Proposal
 
 from db_utils.db_pool import get_pool,close_pool, init_pool
 
-
 import asyncpg
-from datetime import datetime
-
 
 class PromptArchive:
     def __init__(self):
@@ -109,17 +102,17 @@ if __name__ == "__main__":
         await init_pool()
         pa = PromptArchive()
         await pa.init()
-        v1 = await pa.add_prompt("greeting", "Hello, how can I help you?")
-        v2 = await pa.add_prompt("greeting", "Hi there! What can I do for you?")
-        active = await pa.get_active_prompt("greeting")
+        # v1 = await pa.add_prompt("greeting", "Hello, how can I help you?")
+        # v2 = await pa.add_prompt("greeting", "Hi there! What can I do for you?")
+        active = await pa.get_active_prompt("proposal")
         print("Active Prompt:", active)
-        versions = await pa.list_versions("greeting")
+        versions = await pa.list_versions("proposal")
         print("All Versions:", versions)
-        await pa.rollback("greeting", v1)
-        active_after_rollback = await pa.get_active_prompt("greeting")
+        # await pa.rollback("greeting", v1)
+        active_after_rollback = await pa.get_active_prompt("proposal")
         print("Active Prompt after rollback:", active_after_rollback)
         await pa.clear_prompts()
-        active = await pa.get_active_prompt("greeting")
+        active = await pa.get_active_prompt("proposal")
         print("Active Prompt:", active)
         await close_pool()
 

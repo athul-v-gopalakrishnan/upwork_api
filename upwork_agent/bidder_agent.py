@@ -9,7 +9,7 @@ from vault.db_config import DB_CONNECTION_STRING
 from utils.models import *
 
 from langgraph.graph import StateGraph
-from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 
 load_dotenv()
     
@@ -216,7 +216,7 @@ def generate_search_query(state:State):
 def generate_propsal(state:State):
     project_details = state.get("project_details", "")
     retrieved_projects = state.get("retrieved_projects", "")
-    PROPOSAL_SYSTEM_PROMPT = state.get("proposal_system_prompt", PROPOSAL_SYSTEM_PROMPT_BACKUP)
+    PROPOSAL_SYSTEM_PROMPT = state.get("proposal_system_prompt") or PROPOSAL_SYSTEM_PROMPT_BACKUP
     prompt = [
         SystemMessage(content=PROPOSAL_SYSTEM_PROMPT),
         HumanMessage(content=f"The project details are given below:\n{project_details}\n\nThe retrieved past relevant projects are given below:\n{retrieved_projects}")
@@ -242,6 +242,7 @@ async def call_proposal_generator_agent(agent:StateGraph, project_description:st
     initial_state:State = {
         "messages":[HumanMessage(content=f"The project details are given below:\n{project_description}")],
         "project_details":project_description,
+        "proposal_system_prompt": proposal_system_prompt
     }
     final_state = await agent.ainvoke(initial_state)
     generated_proposal =  final_state["proposal"]
