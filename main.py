@@ -18,6 +18,7 @@ from db_utils.access_db import add_proposal, create_proposals_table, create_jobs
 from db_utils.queue_manager import create_queue_table, enqueue_task, get_next_task, update_task_status, abort_tasks_on_restart
 from utils import generate_search_links
 from utils.prompts_archive import PromptArchive
+from rag_utils.embed_data import check_embeddings_exist, embed_documents, create_docs_from_csv
 
 from upwork_agent.scrape_jobs import ScraperSession
 from upwork_agent.application import ApplicationSession
@@ -64,6 +65,8 @@ async def lifespan(app: FastAPI):
     state["latest_urls"] = latest_urls
     page:NyxPage = await state.get("browser").new_page()
     state["page"] = page
+    if not check_embeddings_exist():
+        embed_documents(create_docs_from_csv("data/proposals.csv"))
     await init_pool()
     print("Database pool initialized")
     prompt_archive:PromptArchive = PromptArchive()

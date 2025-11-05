@@ -1,0 +1,7 @@
+.env 
+vault/
+data/
+__pycache__/
+.pkl
+linked_in.py
+test.py

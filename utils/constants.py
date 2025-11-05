@@ -4,7 +4,7 @@ cdp_port = 9222
 chrome_executable_path = "/usr/bin/google-chrome"
 user_data_dir = "/home/neo-new/playwright-profiles/cloned-profile"
 
-cloudfare_challenge_div_id = "#uMtSJ0"
+cloudfare_challenge_div_id = "#rFeX6"
 
 home_url = "about:blank"
 upwork_url = "https://www.upwork.com"

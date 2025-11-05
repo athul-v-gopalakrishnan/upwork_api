@@ -1,7 +1,8 @@
+from urllib.parse import quote_plus
 from dotenv import load_dotenv
+from traceback import print_exc
 from typing import List
-
-from vault.db_config import DB_CONNECTION_STRING, dbname, username, password
+import os
 
 import pandas as pd
 import psycopg2
@@ -11,6 +12,18 @@ from langchain.schema import Document
 from langchain_openai import OpenAIEmbeddings
 
 load_dotenv()
+
+POSTGRES_USER = os.getenv("POSTGRES_USER", "neoitoUpwork")
+POSTGRES_PASSWORD = quote_plus(os.getenv("POSTGRES_PASSWORD", "upwork.bot@neoito"))
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
+POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
+POSTGRES_DB = os.getenv("POSTGRES_DB", "upwork_automation")
+
+DB_CONNECTION_STRING = (
+    f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}@"
+    f"{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+)
+
 
 embedding_model = OpenAIEmbeddings(model="text-embedding-3-large")
 
@@ -88,16 +101,22 @@ def clear_all_pgvector_data():
     cur.close()
     conn.close()
     
+def check_embeddings_exist():
+    """Check if embeddings exist in the database"""
+    try:
+        data = retrieve_similar_documents("test", top_k=1)
+        count = len(data)
+        print("vector db check:", count>0)
+        return count > 0
+    except Exception as e:
+        print(f"Error checking embeddings: {e}")
+        print_exc()
+        return False
+    
 if __name__ == "__main__":
     clear_all_pgvector_data()
-    file_path = "data/proposals.csv"
-    docs = create_docs_from_csv(file_path)
-    embed_documents(docs)
-    query = "Looking for a web developer proficient in Django and React."
-    similar_docs = retrieve_similar_documents(query)
-    for doc in similar_docs:
-        print(doc.page_content)
-        print(doc.metadata)
-        print("-----")
-        
-
+    # status = check_embeddings_exist()
+    # print(f"Embeddings exist: {status}")
+    # embed_documents(create_docs_from_csv("data/proposals.csv"))
+    # status = check_embeddings_exist()
+    # print(f"Embeddings exist: {status}")

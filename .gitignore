@@ -6,3 +6,4 @@ data/
 *.ipynb
 linked_in.py
 *.pkl
+*.tar.gz

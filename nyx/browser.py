@@ -25,7 +25,7 @@ class NyxBrowser:
             chrome_executable_path,
             f'--user-data-dir={user_data_dir}',
             # "--headless=new",
-            # "--disable-gpu",
+            "--disable-gpu",
             '--remote-debugging-port=9222',
             '--no-first-run',
             '--no-default-browser-check',

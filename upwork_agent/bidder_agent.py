@@ -1,12 +1,11 @@
 from dotenv import load_dotenv
 
 from langchain.chat_models import init_chat_model
-from langchain_openai import OpenAIEmbeddings
 from langchain_postgres import PGVector
 from langgraph.graph import StateGraph
 
-from vault.db_config import DB_CONNECTION_STRING
 from utils.models import *
+from rag_utils.embed_data import DB_CONNECTION_STRING, embedding_model
 
 from langgraph.graph import StateGraph
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -17,7 +16,6 @@ llm_name = "openai:gpt-5"
 
 llm = init_chat_model(llm_name)
 retriever_llm = init_chat_model("openai:gpt-5-nano")
-embedding_model = OpenAIEmbeddings(model="text-embedding-3-large")
 
 RETRIEVAL_SYSTEM_PROMPT = """
             You are a specialized query generator for an Upwork proposal system.
