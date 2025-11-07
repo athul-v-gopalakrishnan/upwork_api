@@ -7,3 +7,5 @@ data/
 linked_in.py
 *.pkl
 *.tar.gz
+cloned-profile/
+n8n_data/

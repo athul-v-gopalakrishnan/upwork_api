@@ -6,6 +6,7 @@ from typing import Union, Optional, Dict
 from nyx.page import NyxPage
 from nyx.page_pool import PagePool
 from utils.constants import cdp_url, cdp_port, chrome_executable_path, user_data_dir, home_url
+from utils.chrome_utils import wait_for_cdp
 
 class NyxBrowser:
     def __init__(self, cdp_url=cdp_url, port=cdp_port):
@@ -21,24 +22,24 @@ class NyxBrowser:
     
     async def start(self):
         """Start Chrome subprocess and connect via CDP."""
-        self.chrome_process = subprocess.Popen([
-            chrome_executable_path,
-            f'--user-data-dir={user_data_dir}',
-            # "--headless=new",
-            "--disable-gpu",
-            '--remote-debugging-port=9222',
-            '--no-first-run',
-            '--no-default-browser-check',
-            "--disable-blink-features=AutomationControlled",
-            #  "--disable-software-rasterizer",
-            # "--disable-gpu-compositing",
-            "--disable-infobars",
-            "--start-maximized",
-            "--no-sandbox",
-            "--disable-dev-shm-usage"
-        ] ,stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-        # Give Chrome time to boot
-        await asyncio.sleep(2)
+        # self.chrome_process = subprocess.Popen([
+        #     chrome_executable_path,
+        #     f'--user-data-dir={user_data_dir}',
+        #     # "--headless=new",
+        #     "--disable-gpu",
+        #     '--remote-debugging-port=9222',
+        #     '--no-first-run',
+        #     '--no-default-browser-check',
+        #     "--disable-blink-features=AutomationControlled",
+        #      "--disable-software-rasterizer",
+        #     # "--disable-gpu-compositing",
+        #     "--disable-infobars",
+        #     "--start-maximized",
+        #     "--no-sandbox",
+        #     "--disable-dev-shm-usage"
+        # ] ,stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        # # Give Chrome time to boot
+        # await wait_for_cdp(10)
 
         # Connect with Playwright
         self.playwright = await async_playwright().start()

@@ -3,9 +3,6 @@ import asyncio
 import json
 from asyncpg.utils import _quote_ident
 
-# Adjust these imports/values as needed for your project
-from vault.db_config import dbname, username, password
-
 from db_utils.db_pool import get_pool,close_pool, init_pool
 
 async def create_queue_table():

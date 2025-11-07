@@ -4,7 +4,7 @@ from typing import Union, Optional
 
 from playwright.sync_api import Page, ElementHandle
 
-from vendors.python_ghost_cursor.playwright_async import create_cursor, GhostCursor
+from vendors.ghost_cursor.playwright_async import create_cursor, GhostCursor
 
 from utils.js_scripts import get_cursor_tracking_script
 

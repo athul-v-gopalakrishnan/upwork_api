@@ -18,7 +18,7 @@ from db_utils.access_db import add_proposal, create_proposals_table, create_jobs
 from db_utils.queue_manager import create_queue_table, enqueue_task, get_next_task, update_task_status, abort_tasks_on_restart
 from utils import generate_search_links
 from utils.prompts_archive import PromptArchive
-from rag_utils.embed_data import check_embeddings_exist, embed_documents, create_docs_from_csv
+from rag_utils.embed_data import check_embeddings_exist, embed_documents, create_docs_from_csv, ensure_pgvector
 
 from upwork_agent.scrape_jobs import ScraperSession
 from upwork_agent.application import ApplicationSession
@@ -30,7 +30,7 @@ LOGIN_PASSWORD = os.getenv("UPWORK_PASSWORD")
 SECURITY_QUESTION_ANSWER = os.getenv("UPWORK_SECURITY_QUESTION_ANSWER")
 
 state = {}
-latest_urls_path = 'latest_links.pkl'
+latest_urls_path = 'state_data/latest_links.pkl'
 if os.path.exists(latest_urls_path):
     print("Loading latest URLs from", latest_urls_path)
     with open(latest_urls_path, 'rb') as f:
@@ -69,6 +69,7 @@ async def lifespan(app: FastAPI):
         embed_documents(create_docs_from_csv("data/proposals.csv"))
     await init_pool()
     print("Database pool initialized")
+    await ensure_pgvector()
     prompt_archive:PromptArchive = PromptArchive()
     state["prompt_archive"] = prompt_archive
     state["proposal_prompt_changed"] = True
@@ -162,11 +163,13 @@ async def list_proposal_prompt_versions_api():
     try:
         versions = await state["prompt_archive"].list_versions("proposal")
         output = ""
-        for version in versions:
-            for key, value in version.items():
-                output += f"{key} : {value}\n"
-            output += "\n"
-        return {"status" : "Done", "value" : output}
+        if len(versions):
+            for version in versions:
+                for key, value in version.items():
+                    output += f"{key} : {value}\n"
+                output += "\n"
+            return {"status" : "Done", "value" : output}
+        return {"status" : "Done", "value" : "No prompts added yet"}
     except Exception as e:
         return {"status" : "Failed", "message" : str(e)}
     

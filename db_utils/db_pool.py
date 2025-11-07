@@ -1,7 +1,21 @@
 # db_utils/db_pool.py
+from urllib.parse import quote_plus
 import asyncpg
 import asyncio
-from vault.db_config import dbname, username, password
+import os
+
+POSTGRES_USER = os.getenv("POSTGRES_USER", "neoitoUpwork")
+POSTGRES_PASSWORD_RAW = os.getenv("POSTGRES_PASSWORD", "upwork.bot@neoito")
+POSTGRES_PASSWORD_ENC = quote_plus(os.getenv("POSTGRES_PASSWORD", "upwork.bot@neoito"))
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
+POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
+POSTGRES_DB = os.getenv("POSTGRES_DB", "upwork_automation")
+
+DB_CONNECTION_STRING = (
+    f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD_ENC}@"
+    f"{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+)
+
 
 pool = None  # global singleton
 
@@ -10,10 +24,10 @@ async def init_pool():
     global pool
     if pool is None:
         pool = await asyncpg.create_pool(
-            user=username,
-            password=password,
-            database=dbname,
-            host="localhost",
+            user=POSTGRES_USER,
+            password=POSTGRES_PASSWORD_RAW,
+            database=POSTGRES_DB,
+            host=POSTGRES_HOST,
             min_size=1,
             max_size=10,
         )

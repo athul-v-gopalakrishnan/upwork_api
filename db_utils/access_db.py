@@ -7,9 +7,6 @@ from upwork_agent.bidder_agent import Proposal
 
 from db_utils.db_pool import get_pool,close_pool, init_pool
 
-# Adjust these imports/values as needed for your project
-from vault.db_config import dbname, username, password
-
 async def create_proposals_table():
     try:
         pool = await get_pool()

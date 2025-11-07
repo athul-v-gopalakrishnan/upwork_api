@@ -13,12 +13,12 @@ except ModuleNotFoundError:
     # https://github.com/pyppeteer/pyppeteer/blob/dev/pyppeteer/element_handle.py
     from pyppeteer.element_handle import ElementHandle
 
-from python_ghost_cursor.shared._math import (
+from ..shared._math import (
     Vector,
     origin,
     overshoot,
 )
-from python_ghost_cursor.shared._spoof import (
+from ..shared._spoof import (
     path,
     should_overshoot,
     get_random_box_point,

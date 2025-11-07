@@ -62,12 +62,12 @@ class ScraperSession(Session):
                     await update_task_status(self.task_id, "failed")
                     return False
                 await asyncio.sleep(2)
-            self.update_status("Done", f"Scraping session completed. {self.job_counter.get_count()} new jobs found.")
+            self.update_status("Success", f"Scraping session completed. {self.job_counter.get_count()} new jobs found.")
             await self.send_status()
             self.print_status()
-            await update_task_status(self.task_id, "failed")
+            await update_task_status(self.task_id, "Done")
             await self.close_client()
-            with open("latest_links.pkl", "wb") as f:
+            with open("state_data/latest_links.pkl", "wb") as f:
                 pickle.dump(self.get_latest_links(), f)
                 print("Latest links saved to latest_links.pkl")
             await self.page.goto(home_url)

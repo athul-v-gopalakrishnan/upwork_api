@@ -2,7 +2,7 @@ import math
 import random
 import numpy as np
 from typing import Union, Optional, Dict, List
-from python_ghost_cursor.shared._math import (
+from ..shared._math import (
     Vector,
     magnitude,
     direction,

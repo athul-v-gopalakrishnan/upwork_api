@@ -1,4 +1,3 @@
-from urllib.parse import quote_plus
 from dotenv import load_dotenv
 from traceback import print_exc
 from typing import List
@@ -6,23 +5,26 @@ import os
 
 import pandas as pd
 import psycopg2
+import asyncpg
 
 from langchain_postgres import PGVector
 from langchain.schema import Document
 from langchain_openai import OpenAIEmbeddings
 
+from db_utils.db_pool import get_pool,close_pool, init_pool, DB_CONNECTION_STRING, \
+    POSTGRES_USER, POSTGRES_PASSWORD_RAW, POSTGRES_DB, POSTGRES_HOST
+
 load_dotenv()
 
-POSTGRES_USER = os.getenv("POSTGRES_USER", "neoitoUpwork")
-POSTGRES_PASSWORD = quote_plus(os.getenv("POSTGRES_PASSWORD", "upwork.bot@neoito"))
-POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
-POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
-POSTGRES_DB = os.getenv("POSTGRES_DB", "upwork_automation")
-
-DB_CONNECTION_STRING = (
-    f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}@"
-    f"{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
-)
+async def ensure_pgvector():
+    conn = await asyncpg.connect(
+        user=POSTGRES_USER,
+        password=POSTGRES_PASSWORD_RAW,
+        database=POSTGRES_DB,
+        host=POSTGRES_HOST,
+    )
+    await conn.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+    await conn.close()
 
 
 embedding_model = OpenAIEmbeddings(model="text-embedding-3-large")
