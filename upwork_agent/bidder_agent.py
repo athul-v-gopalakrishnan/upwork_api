@@ -7,7 +7,6 @@ from langgraph.graph import StateGraph
 from utils.models import *
 from rag_utils.embed_data import DB_CONNECTION_STRING, embedding_model
 
-from langgraph.graph import StateGraph
 from langchain_core.messages import SystemMessage, HumanMessage
 
 load_dotenv()

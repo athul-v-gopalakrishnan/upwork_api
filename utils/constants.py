@@ -4,7 +4,7 @@ cdp_port = 9222
 chrome_executable_path = "/usr/bin/google-chrome"
 user_data_dir = "/root/.config/chrome-profile"
 
-cloudfare_challenge_div_id = "#JHsxi5"
+cloudfare_challenge_div_id = ".main-content > div:nth-of-type(1)"
 
 home_url = "about:blank"
 upwork_url = "https://www.upwork.com"

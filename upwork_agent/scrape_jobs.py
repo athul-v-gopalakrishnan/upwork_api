@@ -178,11 +178,11 @@ class ScraperSession(Session):
         
     async def visit_job_page(self, link:str):
         try:
-            await self.page.goto(link,wait_for = 'div[data-test="UpCInput"]', captcha_selector=cloudfare_challenge_div_id,wait_until= "domcontentloaded",referer=upwork_url)
+            await self.page.goto(link,wait_for = 'div.job-details-content', captcha_selector=cloudfare_challenge_div_id,wait_until= "domcontentloaded",referer=upwork_url)
         except Exception as e:
             self.update_status("Failed", f"Error visiting job page: {e}")
-            await self.send_status()
-            self.print_status()
+            # await self.send_status()
+            # self.print_status()
             await self.page.goto(home_url)
             return False
         return True
@@ -226,7 +226,7 @@ class ScraperSession(Session):
                     print("true")
                     print("Exact link match found, stopping further scraping.")
                 break
-            print("Fasle")
+            print("False")
             await self.page.click(link_div, wait_for='li[data-qa="client-location"] strong')
             
             try:

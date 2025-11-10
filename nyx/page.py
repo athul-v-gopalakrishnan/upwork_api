@@ -208,7 +208,7 @@ class NyxPage:
             print(f"Warning: Could not get element '{selector}': {e}")
             return None 
         
-    async def expect_and_solve_cloudfare_challenge(self, selector:Union[str,ElementHandle] , timeout:int=15000):
+    async def expect_and_solve_cloudfare_challenge(self, selector:Union[str,ElementHandle] = ".main-content > div:nth-of-type(1)" , timeout:int=15000):
         """Wait for and solve Cloudflare challenge if present"""
         try:
             await asyncio.sleep(2)
