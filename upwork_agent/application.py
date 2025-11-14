@@ -162,7 +162,6 @@ class ApplicationSession(Session):
                     text_area = await div.query_selector('textarea')
                     await self.page.copy_to_clipboard(questions_and_answers[question_in_page.strip()])
                     await self.page.paste_from_clipboard(selector = text_area)
-            input("enter to finish : ")
             self.applied = True 
             self.print_status()
             return True

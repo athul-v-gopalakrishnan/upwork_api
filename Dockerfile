@@ -42,6 +42,7 @@ RUN apt-get update && apt-get install -y google-chrome-stable
 # Copy only requirements first for better caching
 COPY ./requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
+RUN playwright install chromium
 
 # Copy the entire app (all code and subfolders)
 COPY . /app
@@ -49,23 +50,6 @@ COPY . /app
 # Expose the FastAPI port
 EXPOSE 8000
 
-# CMD xvfb-run -a \
-#   google-chrome \
-#     --user-data-dir=./cloned-profile \
-#     --no-sandbox \
-#     --disable-dev-shm-usage \
-#     --remote-debugging-address=0.0.0.0 \
-#     --remote-debugging-port=9222 \
-#     --disable-blink-features=AutomationControlled \
-#     --disable-gpu \
-#     --start-maximized \
-#     --no-first-run \
-#     --no-default-browser-check \
-#     --disable-infobars &
-
-
-# Start the FastAPI app (adjust if your entry is different)
-# CMD xvfb-run --server-args="-screen 0 1920x1080x24" uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 # ✅ Ensure start.sh is executable + correct line endings
 RUN sed -i 's/\r$//' /app/start.sh && chmod +x /app/start.sh
 
