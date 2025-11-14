@@ -49,7 +49,7 @@ class Session:
                     await self.page.click('#login_rememberme')
                 await self.page.fill_field_and_enter('#login_password', self.password)
                 await asyncio.sleep(3)
-                await self.page.fill_field_and_enter('#login_answer', self.security_question_answer)
+                await self.page.fill_field_and_enter('#login_answer', self.security_answer)
             elif await self.page.check_for_element('section[data-test="freelancer-sidebar-profile"]'):
                 self.update_status("Success", "Already logged in")
                 return True
