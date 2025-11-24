@@ -25,7 +25,7 @@ class Session:
             return True 
         except Exception as e:
             self.update_status("Failed", f"Error setting up HTTP client: {e}")
-            self.send_status()
+            # self.send_status()
             self.print_status()
             return False
         
@@ -54,13 +54,11 @@ class Session:
                 self.update_status("Success", "Already logged in")
                 return True
             else:
-                self.update_status("Failed", "Login page not found")
-                await self.send_status()
+                await self.send_status("Failed", "Login page not found")
                 self.print_status()
                 return False
         except Exception as e:
-            self.update_status("Failed", f"Error during login: {e}")
-            await self.send_status()
+            await self.send_status("Failed", f"Error during login: {e}")
             self.print_status()
             await self.page.goto(home_url)
             return False
@@ -68,7 +66,7 @@ class Session:
             if not to_scrape:
                 await self.page.goto(home_url)
                 
-    async def send_status(self):
+    async def send_status(self, status: str = None, message: str = None):
         if not self.status_endpoint:
             self.status["status"] = "Failed"
             self.status["message"] = "Set the status_endpoint parameter in Session initialisation."
@@ -76,6 +74,8 @@ class Session:
         if not self.client:
             await self.setup_client()
         try:
+            if status and message:
+                self.update_status(status, message)
             await self.client.post(self.status_endpoint, json=self.status)
             return True
         except Exception as e:

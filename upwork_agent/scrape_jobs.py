@@ -37,12 +37,9 @@ class ScraperSession(Session):
         self.job_filter = job_filter
         
     async def run(self):
-        try:
-            client_setup_success = await self.setup_client()
-            if not client_setup_success:
-                return False
-        except Exception as e:
-            print(f"Error setting up client: {e}")
+        client_setup_success = await self.setup_client()
+        if not client_setup_success:
+            return False
         try:
             login_success = await self.login(to_scrape=True)
             if not login_success:
@@ -90,8 +87,7 @@ class ScraperSession(Session):
             self.job_details["client_location"] = client_location.strip() if client_location else "N/A"
             
             if self.job_details["client_location"] == "N/A":
-                self.status["status"] = "Failed"
-                self.status["message"] = "Page loaded but failed to extract job details, possibility of a private job posting."
+                self.page.take_screenshot("private_job.png")
                 raise PrivateProfileError("Private job posting or structure changed.")
             
             hire_rate = await self.page.get_text_content('li[data-qa="client-job-posting-stats"] div')
@@ -167,18 +163,12 @@ class ScraperSession(Session):
             else:
                 self.job_details["questions"] = "N/A"
             return True
-        except Exception as e:
-            print(e)
-            traceback.print_exc()
-            await self.page.goto(home_url)
-            self.update_status("Failed", f"Error scraping job page: {e}")
-            await self.send_status()
-            self.print_status()
-            return False
+        except Exception:
+            raise
         
     async def visit_job_page(self, link:str):
         try:
-            await self.page.goto(link,wait_for = 'div.job-details-content', captcha_selector=cloudfare_challenge_div_id,wait_until= "domcontentloaded",referer=upwork_url)
+            await self.page.goto(link,wait_for = 'section[data-test="JobsList"]', captcha_selector=cloudfare_challenge_div_id,wait_until= "domcontentloaded",referer=upwork_url)
         except Exception as e:
             self.update_status("Failed", f"Error visiting job page: {e}")
             # await self.send_status()
@@ -206,8 +196,7 @@ class ScraperSession(Session):
             uuid = await link_div.get_attribute('data-ev-job-uid')
             uuid = int(uuid) if uuid and uuid.isdigit() else None
             if not link:
-                self.update_status("Failed", "Problem extracting link ... \nMaybe the website structure has changed")
-                await self.send_status()
+                self.send_status("Failed", "Problem extracting link ... \nMaybe the website structure has changed")
                 self.print_status()
                 return False
             link = upwork_url + link
@@ -223,17 +212,27 @@ class ScraperSession(Session):
                         and ("seconds" not in job_posted_time.lower().split(sep=" ") and "second" not in job_posted_time.lower().split(sep=" "))):
                 print(f"last_link in {category}")
                 if uuid == self.latest_links.get(category,None):
-                    print("true")
                     print("Exact link match found, stopping further scraping.")
                 break
-            print("False")
-            await self.page.click(link_div, wait_for='li[data-qa="client-location"] strong')
+            try:
+                await self.page.click(link_div, wait_for='li[data-qa="client-location"] strong')
+            except Exception as e:
+                self.send_status("Failed",f"{e}")
+                self.print_status()
+                continue
             
             try:
                 scrape_success = await self.scrape_job_page()
             except PrivateProfileError:
+                self.send_status("Failed", f"Private job posting or structure changed.\nSkipping job {link}")
+                self.print_status()
                 continue
-            post_processing_success = await self.post_scraping_tasks(scrape_success, uuid = uuid, link = link, category = category)
+            except Exception as e:
+                self.send_status("Failed", f"Error scraping job page: {e}\nSkipping job {link}")
+                self.print_status()
+                continue
+                
+            post_processing_success = await self.post_scraping_tasks(uuid = uuid, link = link, category = category)
             if not post_processing_success:
                 return False
             await asyncio.sleep(2)
@@ -241,11 +240,7 @@ class ScraperSession(Session):
             await asyncio.sleep(2)
         return True
     
-    async def post_scraping_tasks(self, scrape_success:bool, uuid:int, link:str, category:str):
-        if not scrape_success:
-            await self.send_status()
-            self.print_status()
-            return False
+    async def post_scraping_tasks(self, uuid:int, link:str, category:str):
         if not self.job_filter.is_job_allowed(self.job_details):
             print("Job filtered out based on criteria.")
             return True
@@ -254,8 +249,7 @@ class ScraperSession(Session):
             print(f"Job already exists in db - {link}")
             return True
         elif not job_update_status:
-            self.update_status("Failed", f"Database update error - {msg}")
-            await self.send_status()
+            await self.send_status("Failed", f"Database update error - {msg}")
             self.print_status()
             return False
         else:
@@ -290,9 +284,7 @@ class ScraperSession(Session):
                 uuid = await link_div.get_attribute('data-ev-opening_uid')
                 uuid = int(uuid) if uuid and uuid.isdigit() else None
                 if not link:
-                    self.status["status"] = "Failed"
-                    self.status["message"] = "Problem extracting link ... \nMaybe the website structure has changed"
-                    await self.send_status()
+                    await self.send_status("Failed", "Problem extracting link ... \nMaybe the website structure has changed")
                     self.print_status()
                     return False
                 link = upwork_url + link
@@ -306,16 +298,30 @@ class ScraperSession(Session):
                     if uuid == self.latest_links.get("Best Match",None):
                         print("Exact link match found, stopping further scraping.")
                     break
-                await self.page.click(link_div, wait_for='li[data-qa="client-location"] strong')
+                try:
+                    await self.page.click(link_div, wait_for='li[data-qa="client-location"] strong')
+                except Exception as e:
+                    self.send_status("Failed",f"Error clicking job link: {e}")
+                    continue
+                try:
+                    scrape_success = await self.scrape_job_page()
+                except PrivateProfileError:
+                    self.send_status("Failed", f"Private job posting or structure changed.\nSkipping job {link}")
+                    self.print_status()
+                    continue
+                except Exception as e:
+                    self.send_status("Failed", f"Error scraping job page: {e}\nSkipping job {link}")
+                    self.print_status()
+                    continue
                 
-                scrape_success = await self.scrape_job_page()
-                
-                post_scraping_success = await self.post_scraping_tasks(scrape_success, uuid, link, "Best Match")
+                post_scraping_success = await self.post_scraping_tasks(uuid, link, "Best Match")
                 if not post_scraping_success:
                     return False
                 await asyncio.sleep(2)
                 await self.page.go_back()
                 await asyncio.sleep(2)
+        else:
+            self.send_status("Failed", "Best Match tab not found on login page.")
         return True             
                 
     def get_latest_links(self):
