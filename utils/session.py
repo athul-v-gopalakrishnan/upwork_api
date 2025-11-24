@@ -36,10 +36,28 @@ class Session:
     def update_status(self, status:str, message:str):
         self.status["status"] = status
         self.status["message"] = message
+        
+    async def logout(self):
+        try:
+            await self.page.click('button[aria-describedby="options-theme-popover"]')
+            await asyncio.sleep(0.5)
+            await self.page.click('button[data-cy="logout-trigger"]')
+            await asyncio.sleep(2)
+        except Exception as e:
+            raise e
                     
     async def login(self, remember_me:bool = True, to_scrape:bool = False):
         try:
             await self.page.goto(upwork_login_url,captcha_selector=cloudfare_challenge_div_id,wait_until= "domcontentloaded",referer=upwork_url) 
+            logged_in = await self.page.check_for_element('section[data-test="freelancer-sidebar-profile"]')
+            if logged_in:
+                print("Already logged in")
+                logged_in_user = await self.page.get_text_content('a.profile-title')
+                print(f"Logged in user: {logged_in_user}")
+                if "Maharuf" in logged_in_user:
+                    self.update_status("Success", "Changing accounts - Logging out first")
+                    self.print_status()
+                    await self.logout()
             login_page = await self.page.check_for_element("#login_username")
             await asyncio.sleep(2)
             if login_page:
@@ -49,7 +67,8 @@ class Session:
                     await self.page.click('#login_rememberme')
                 await self.page.fill_field_and_enter('#login_password', self.password)
                 await asyncio.sleep(3)
-                await self.page.fill_field_and_enter('#login_answer', self.security_answer)
+                if self.security_answer and await self.page.check_for_element('#login_answer'):
+                    await self.page.fill_field_and_enter('#login_answer', self.security_answer)
             elif await self.page.check_for_element('section[data-test="freelancer-sidebar-profile"]'):
                 self.update_status("Success", "Already logged in")
                 return True
