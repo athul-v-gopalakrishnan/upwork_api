@@ -3,7 +3,7 @@ import re
 
 class JobFilter:
     WORDS_TO_AVOID = {"wordpress", "shopify", "woocommerce", "magento", "wix", "squarespace", "webflow", "video editing", "laravel"}
-    MINIMUM_SPENT = 50  # Minimum amount spent in dollars
+    MINIMUM_SPENT = 50000  # Minimum amount spent in dollars
     DURATION_TYPES = {"duration1", "duration2", "duration3", "duration4"}  # Example duration types
     
     def __init__(self, words_to_avoid: Optional[set[str]] = {}):
@@ -49,6 +49,12 @@ class JobFilter:
                 return None
             try:
                 num = float(m.group(1))
+                suffix = m.group(2).lower()
+                # Apply multiplier
+                if suffix == 'k':
+                    num *= 1_000
+                elif suffix == 'm':
+                    num *= 1_000_000
                 return num
             except ValueError:
                 return None

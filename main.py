@@ -120,6 +120,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+
 @app.get("/enqueue_task")
 async def enqueue_task_api(task_type:str, payload = None, priority:int=0):
     print(f"Enqueuing task: {task_type} with payload: {payload} and priority: {priority}")

@@ -14,5 +14,3 @@ proposals_db_name = "proposals"
 
 send_job_updates_webhook_url_test = "https://264f935563a3.ngrok-free.app/webhook-test/send_job_updates"
 send_job_updates_webhook_url = "http://n8n:5678/webhook/send_job_updates"
-
-

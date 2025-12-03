@@ -36,7 +36,6 @@ class Session:
     def update_status(self, status:str, message:str):
         self.status["status"] = status
         self.status["message"] = message
-        
     async def logout(self):
         try:
             await self.page.click('button[aria-describedby="options-theme-popover"]')
